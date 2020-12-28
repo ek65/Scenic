@@ -173,6 +173,18 @@ class TypecheckedDistribution(Distribution):
 		self.coercer = coercer
 		self.loc = saveErrorLocation()
 
+	def encodeToSMT(self, smt_file_path, cached_variables, obj=None, debug=False):
+		if debug:
+			writeSMTtoFile(smt_file_path, "TypecheckedDistribution")
+
+		if not isinstance(obj, Samplable):
+			obj = self
+		if obj in cached_variables.keys():
+			return cached_variables[obj]
+
+		output_var = self.dist.encodeToSMT(smt_file_path, cached_variables, debug = debug)
+		return cacheVarName(cached_variables, self, output_var)
+
 	def sampleGiven(self, value):
 		val = value[self.dist]
 		suffix = None

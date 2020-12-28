@@ -9,7 +9,8 @@ import shapely.geometry
 import shapely.ops
 
 from scenic.core.distributions import (needsSampling, distributionFunction,
-                                       monotonicDistributionFunction)
+                                       monotonicDistributionFunction, checkAndEncodeSMT, smt_equal, \
+                                       writeSMTtoFile)
 from scenic.core.lazy_eval import needsLazyEvaluation
 from scenic.core.utils import cached_property
 
@@ -17,9 +18,23 @@ from scenic.core.utils import cached_property
 def sin(x) -> float:
 	return math.sin(x)
 
+def sinEncodeSMT(smt_file_path, cached_variables, x, debug=False):
+	var = checkAndEncodeSMT(smt_file_path, cached_variables, x, debug)
+	output = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'sine')
+	smt_encoding = smt_equal(output, '(sin '+var+')')
+	writeSMTtoFile(smt_file_path, smt_encoding)
+	return output
+
 @distributionFunction
 def cos(x) -> float:
 	return math.cos(x)
+
+def cosEncodeSMT(smt_file_path, cached_variables, x, debug=False):
+	var = checkAndEncodeSMT(smt_file_path, cached_variables, x, debug)
+	output = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'sine')
+	smt_encoding = smt_equal(output, '(cos '+var+')')
+	writeSMTtoFile(smt_file_path, smt_encoding)
+	return output
 
 @monotonicDistributionFunction
 def hypot(x, y) -> float:

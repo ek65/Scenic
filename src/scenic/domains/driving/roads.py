@@ -230,6 +230,12 @@ class NetworkElement(_ElementReferencer, PolygonalRegion):
         """
         return (self.orientation[_toVector(point)],)
 
+    def nominalDirectionsAtEncodeSMT(self, smt_file_path, cached_variables, point, debug=False):
+        if debug:
+            writeSMTtoFile(smt_file_path, "roads.py Class NetworkElement")
+
+        raise NotImplementedError
+
     def __getstate__(self):
         state = super().__getstate__()
         del state['network']    # do not pickle weak reference to parent network
@@ -300,6 +306,13 @@ class LinearElement(NetworkElement):
         point = _toVector(point)
         start, end = self.centerline.nearestSegmentTo(point)
         return start.angleTo(end)
+
+    def _defaultHeadingAtEncodeSMT(self, smt_file_path, cached_variables, point, debug=False):
+        if debug:
+            writeSMTtoFile(smt_file_path, "roads.py Class LinearElement _defaultHeadingAtEncodeSMT")
+        output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+
+        raise NotImplementedError
 
     @distributionFunction
     def flowFrom(self, point: Vectorlike, distance: float,
@@ -413,6 +426,7 @@ class Road(LinearElement):
         if debug:
             writeSMTtoFile(smt_file_path, "class Road laneSectionAtEncodeSMT")
 
+        point = _toVector(point)
         output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
         intersectingLanes = self.network.findPointInForSMTEncoding(cached_variables['egoVisibleRegion'], self.lanes)
         if intersectingLanes is None:
@@ -817,6 +831,22 @@ class Intersection(NetworkElement):
         maneuvers = self.maneuversAt(point)
         return [m.connectingLane.orientation[point] for m in maneuvers]
 
+    def nominalDirectionsAtEncodeSMT(self, smt_file_path, cached_variables, point, debug=False):
+        if debug:
+            writeSMTtoFile(smt_file_path, "roads.py Class Intersection nominalDirectionsAtEncodeSMT")
+
+        raise NotImplementedError
+        # output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+        # manuevers = self.network._findPointInAllForSMTEncoding(smt_file_path, cached_variables, self.maneuvers,
+        #                                 key=lambda m: m.connectingLane, debug = False)
+        # if manuevers is None:
+        #     return None
+
+        # for m in manuevers:
+        #     m.
+
+
+
 @attr.s(auto_attribs=True, kw_only=True, repr=False)
 class Signal:
     """Traffic lights, stop signs, etc."""
@@ -1159,6 +1189,7 @@ class Network:
         if debug:
             writeSMTtoFile(smt_file_path, "findPointInEncodeSMT")
 
+        point = _toVector(point)
         output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
         intersectingElems = self.findPointInForSMTEncoding(cached_variables['egoVisibleRegion'], elems)
         if intersectingElems == []:
@@ -1203,10 +1234,28 @@ class Network:
                     found.append(thing)
         return found
 
-    def _findPointInAllEncodeSMT(self, smt_file_path, cached_variables, point, things, key, debug = False):
+    def _findPointInAllForSMTEncoding(self, smt_file_path, cached_variables, things, key=lambda e: e, debug=False):
+        """ outputs a list of scenic regions intersecting with ego's visible Region """
+        if debug: 
+            writeSMTtoFile(smt_file_path, "Class Network _findPointInAllForSMTEncoding")
+        region = cached_variables['egoVisibleRegion']
+        found = []
+        for thing in things:
+            if key(thing).polygon.intersection(region) is not None:
+                found.append(thing)
+        if not found and self.tolerance > 0:
+            for thing in things:
+                if key(thing).polygon.distance(region) <= self.tolerance:
+                    found.append(thing)
+        if not found:
+            return None
+        return found
+
+    def _findPointInAllEncodeSMT(self, smt_file_path, cached_variables, point, things, key, debug=False):
         if debug: 
             writeSMTtoFile(smt_file_path, "Class Network _findPointInAllEncodeSMT")
         # TODO : optimize the use of point
+        point = _toVector(point)
         region = cached_variables['egoVisibleRegion']
         output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
 
@@ -1262,6 +1311,7 @@ class Network:
     def roadAtEncodeSMT(self, smt_file_path, cached_variables, point, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "roadAtEncodeSMT")
+        point = _toVector(point)
         output = self.findPointInEncodeSMT(smt_file_path, cached_variables, point, self.allRoads, debug=False)
         assert(output != None)
         return output
@@ -1274,6 +1324,7 @@ class Network:
     def laneAtEncodeSMT(self, smt_file_path, cached_variables, point, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "laneAtEncodeSMT")
+        point = _toVector(point)
         output = self.findPointInEncodeSMT(smt_file_path, cached_variables, point, self.lanes, debug=False)
         assert(output != None)
         return output
@@ -1288,7 +1339,7 @@ class Network:
     def laneSectionAtEncodeSMT(self, smt_file_path, cached_variables, point, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "laneSectionAtEncodeSMT")
-
+        point = _toVector(point)
         output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
         intersectingLanes = self.findPointInForSMTEncoding(cached_variables['egoVisibleRegion'], self.lanes)
         assert(intersectingLanes != [])
@@ -1314,7 +1365,7 @@ class Network:
     def laneGroupAtEncodeSMT(self, smt_file_path, cached_variables, point, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "laneGroupAtEncodeSMT")
-
+        point = _toVector(point)
         output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
         intersectingRoads = self.findPointInForSMTEncoding(cached_variables['egoVisibleRegion'], self.allRoads)
         assert(intersectingRoads != [])
@@ -1341,7 +1392,7 @@ class Network:
     def crossingAtEncodeSMT(self, smt_file_path, cached_variables, point, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "crossingAtEncodeSMT")
-
+        point = _toVector(point)
         output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
         intersectingRoads = self.findPointInForSMTEncoding(cached_variables['egoVisibleRegion'], self.allRoads)
         assert(intersectingRoads != [])
@@ -1366,6 +1417,7 @@ class Network:
     def intersectionAtEncodeSMT(self, smt_file_path, cached_variables, point, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "intersectionAtEncodeSMT")
+        point = _toVector(point)
         output = self.findPointInEncodeSMT(smt_file_path, cached_variables, point, self.intersections, debug=False)
         assert(output != None)
         return output
@@ -1384,6 +1436,31 @@ class Network:
         if road is not None:
             return road.nominalDirectionsAt(point)
         return ()
+
+    def nominalDirectionsAtEncodeSMT(self, smt_file_path, cached_variables, point, debug=False):
+        if debug:
+            writeSMTtoFile(smt_file_path, "roads.py Class Network nominalDirectionsAtEncodeSMT")
+
+        raise NotImplementedError
+        # # assume that the point is conditioned by now
+        # assert(point._conditioned != point and point)
+
+        # output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+        # intersectingIntersection = self.findPointInForSMTEncoding(cached_variables['egoVisibleRegion'], self.intersections)
+        # if intersectingIntersection is not None:
+        #     for intersection in intersectingIntersection:
+        #         intersection.nominalDirectionsAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+
+        # intersectingRoads = self.findPointInForSMTEncoding(cached_variables['egoVisibleRegion'], self.allRoads)
+        # if intersectingRoads is not None:
+        #     for road in intersectingRoads:
+        #         road.nominalDirectionsAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+
+        # if intersectingIntersection is None and intersectingRoads is None:
+        #     return None
+
+        # return output_point
+
 
     def show(self):
         """Render a schematic of the road network for debugging.

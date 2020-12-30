@@ -558,6 +558,8 @@ class FunctionDistribution(Distribution):
 		import scenic.core.vectors as vectors
 		import scenic.core.geometry as geometry
 		import scenic.core.regions as regions
+		import scenic.domains.driving.roads as roads
+
 		if self.function == vectors.OrientedVector.make:
 			position = self.arguments[0]
 			heading = self.arguments[1]
@@ -668,6 +670,17 @@ class StarredDistribution(Distribution):
 		self.value = value
 		self.lineno = lineno	# for error handling when unpacking fails
 		super().__init__(value, valueType=value.valueType)
+
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
+		if debug:
+			writeSMTtoFile(smt_file_path, "Class StarredDistribution encodeToSMT")
+
+		if self in cached_variables.keys():
+			if debug:
+				writeSMTtoFile(smt_file_path, "StarredDistribution already cached")
+			return cached_variables[self]
+
+		return self.value.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)	
 
 	def sampleGiven(self, value):
 		return value[self.value]
@@ -827,6 +840,58 @@ class AttributeDistribution(Distribution):
 		self.attribute = attribute
 		self.object = obj
 
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
+		if debug:
+			writeSMTtoFile(smt_file_path, "Class AttributeDistribution encodeToSMT")
+		
+		if self in cached_variables.keys():
+			writeSMTtoFile(smt_file_path, "Class AttributeDistribution self in cached_variables")
+
+		from scenic.core.object_types import Point
+		import scenic.domains.driving.roads as roads
+
+		if encode:
+			if isinstance(self.object, Point):
+				return getattr(self.object, self.attribute)._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+
+			elif isinstance(self.object, Options):
+				if self.object.checkOptionsType(roads.NetworkElement):
+					return self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+				else: 
+					raise NotImplementedError
+			elif isinstance(self.object, UniformDistribution):
+				return self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+			else:
+				if debug:
+					writeSMTtoFile("NEW CASE: ", type(self.object))
+				raise NotImplementedError
+
+		else:
+			if isinstance(self.object, Options):
+				if self.object.checkOptionsType(roads.NetworkElement):
+					networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+					outputObjs = set()
+					for obj in networkObj:
+						outputObjs.add(getattr(self.object, self.attribute).encodeToSMT(smt_file_path, cached_variables, 
+													debug=debug, encode=encode))
+					return outputObjs
+				else: 
+					raise NotImplementedError
+			elif isinstance(self.object, UniformDistribution):
+				networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+				outputObjs = set()
+				for obj in networkObj:
+					outputObjs.add(getattr(self.object, self.attribute).encodeToSMT(smt_file_path, cached_variables, 
+												debug=debug, encode=encode))
+				return outputObjs
+			else:
+				if debug:
+					writeSMTtoFile("NEW CASE: ", type(self.object))
+				raise NotImplementedError
+
+		return None
+
+
 	def sampleGiven(self, value):
 		obj = value[self.object]
 		return getattr(obj, self.attribute)
@@ -867,7 +932,7 @@ class AttributeDistribution(Distribution):
 class OperatorDistribution(Distribution):
 	"""Distribution resulting from applying an operator to one or more distributions"""
 	def __init__(self, operator, obj, operands, valueType=None):
-		operands = tuple(toDistributi2on(arg) for arg in operands)
+		operands = tuple(toDistribution(arg) for arg in operands)
 		if valueType is None:
 			valueType = self.inferType(obj, operator)
 		super().__init__(obj, *operands, valueType=valueType)
@@ -958,10 +1023,7 @@ class OperatorDistribution(Distribution):
 			writeSMTtoFile(smt_file_path, smt_encoding)
 
 		elif self.operator == '__call__':
-			if isinstance(self.object, MethodDistribution):
-				methodDist = self.object
-				if methodDist.attribute == 'intersect':
-					return cacheVarName(cached_variables, self, var_name)
+			raise NotImplementedError
 		else:
 			raise NotImplementedError
 
@@ -1465,43 +1527,82 @@ class Options(MultiplexerDistribution):
 		index = self.makeSelector(len(options)-1, weights)
 		super().__init__(index, options)
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def checkOptionsType(self, class_type):
+		output_bool = True
+		for opt in self.options:
+			if not isinstance(opt, class_type):
+				output_bool = False
+				break
+		return output_bool
+
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Options class")
-			# writeSMTtoFile(smt_file_path, str(self.options))
 
 		if self in cached_variables.keys():
 			return cached_variables[self]
-		
-		if self is not self._conditioned:
-			options = self._conditioned
-		else:
-			options = self.options
 
-		if len(options) != 0 :
-			x = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], "x")
-			y = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], "y")
-			output = (x,y)
+		options = self._conditioned
+		assert(len(options) > 0)
 
-			import scenic.domains.driving.roads as roads
-			import shapely.geometry
-			valid_elems = set()
-			for opt in options:
-				if isinstance(opt, roads.NetworkElement) and isinstance(cached_variables['current_obj'], tuple):
-					if opt.polygon.contains(shapely.geometry.Point(cached_variables['current_obj'])):
+		import scenic.domains.driving.roads as roads
+		import shapely.geometry
+		if encode:
+			if self.checkOptionsType(roads.NetworkElement):
+				valid_elems = set()
+				for opt in options:
+					if opt.polygon.contains(shapely.geometry.Point(cached_variables['current_obj_pos'])):
 						valid_elems.add(opt)
 
-			for elem in valid_elems:
-				point = elem.encodeToSMT(smt_file_path, cached_variables, obj=None, debug=False)
-				(x_cond, y_cond) = vector_operation_smt(point, "equal", output)
-				writeSMTtoFile(smt_file_path, x_cond)
-				writeSMTtoFile(smt_file_path, y_cond)
-		else:
-			raise NotImplementedError
+				if len(valid_elems) == 0:
+					raise RuntimeParseError('tried to make discrete distribution over empty domain!')
 
-		return output
-		# import scenic.domains.driving.roads as road_library
-		# if isinstance(options[0], road_library.LinearElement):
+				self._conditioned = valid_elems
+				x = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], "x")
+				y = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], "y")
+				output = (x,y)
+
+				for elem in valid_elems:
+					point = elem.encodeToSMT(smt_file_path, cached_variables, debug=False)
+					(x_cond, y_cond) = vector_operation_smt(point, "equal", output)
+					writeSMTtoFile(smt_file_path, x_cond)
+					writeSMTtoFile(smt_file_path, y_cond)
+				return output
+
+			elif self.checkOptionsType(class_type = float) or self.checkOptionsType(class_type = int):
+				variable = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], "var")
+				cumulative_smt_encoding = None
+				count = 0
+				for opt in options:
+					smt_encoding = smt_equal(variable, str(opt))
+					if count == 0:
+						cumulative_smt_encoding = smt_encoding
+					else:
+						cumulative_smt_encoding = smt_or(smt_encoding, cumulative_smt_encoding)
+					count += 1
+
+				cumulative_smt_encoding = smt_assert(variable, "equal", cumulative_smt_encoding)
+				writeSMTtoFile(smt_file_path, cumulative_smt_encoding)
+				return variable
+
+			else: 
+				raise NotImplementedError
+
+		else:
+			if self.checkOptionsType(roads.NetworkElement):
+				valid_elems = set()
+				for opt in options:
+					if opt.polygon.contains(shapely.geometry.Point(cached_variables['current_obj_pos'])):
+						valid_elems.add(opt)
+
+				if len(valid_elems) == 0:
+					raise RuntimeParseError('tried to make discrete distribution over empty domain!')
+
+				return valid_elems
+			else:
+				raise NotImplementedError
+
+		return None
 
 	def conditionforSMT(self, condition, conditioned_bool):
 		import scenic.domains.driving.roads as roads
@@ -1579,8 +1680,40 @@ class UniformDistribution(Distribution):
 		valueType = type_support.unifyingType(self.options)
 		super().__init__(*self.options, valueType=valueType)
 
-	def encodeToSMT(self, smt_file_path, cached_variables, obj=None, debug=False):
-		raise NotImplementedError
+	def checkOptionsType(self, class_type):
+		output_bool = True
+		for opt in self.options:
+			if not isinstance(opt.sample(), class_type):
+				output_bool = False
+				break
+		return output_bool
+
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode = True):
+		if debug:
+			writeSMTtoFile(smt_file_path, "class UniformDistribution encodeToSMT")
+		
+		if self in cached_variables.keys():
+			if debug:
+				writeSMTtoFile(smt_file_path, "UniformDistribution already cached")
+			return cached_variables[self]
+
+		# Assume that only one StarredDist is an element of self.options
+		if len(self.options) != 1:
+			raise NotImplementedError
+
+		import scenic.domains.driving.roads as roads
+		if encode:
+			if checkOptionsType(roads.NetworkElement):
+				return opt.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+			else:
+				raise NotImplementedError
+		else:
+			if checkOptionsType(roads.NetworkElement):
+				return opt.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
+			else:
+				raise NotImplementedError
+
+		return None
 
 	def conditionforSMT(self, condition, conditioned_bool):
 		raise NotImplementedError 

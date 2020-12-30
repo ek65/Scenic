@@ -804,7 +804,6 @@ class VectorField:
 			return cacheVarName(cached_variables, obj, (var_name))
 
 		# TODOs: followFrom 
-		
 		return var_name
 
 	@distributionMethod

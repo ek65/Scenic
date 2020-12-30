@@ -13,7 +13,8 @@ from scenic.core.distributions import (Samplable, RejectionException, needsSampl
                                        distributionMethod, smt_add, smt_subtract, smt_multiply, 
                                        smt_divide, smt_and, smt_equal, smt_mod, smt_assert, findVariableName,
                                        checkAndEncodeSMT, writeSMTtoFile, cacheVarName, smt_lessThan, smt_lessThanEq,
-                                       smt_ite, normalizeAngle_SMT, smt_or, vector_operation_smt, Options, isNotConditioned)
+                                       smt_ite, normalizeAngle_SMT, smt_or, vector_operation_smt, Options, isNotConditioned,
+                                       Options, UniformDistribution)
 from scenic.core.lazy_eval import valueInContext
 from scenic.core.vectors import Vector, OrientedVector, VectorDistribution, VectorField, VectorOperatorDistribution
 from scenic.core.geometry import _RotatedRectangle
@@ -23,6 +24,8 @@ from scenic.core.type_support import toVector
 from scenic.core.utils import cached, cached_property, areEquivalent
 import matplotlib.pyplot as plt
 from scenic.core.type_support import TypecheckedDistribution
+from scenic.core.errors import RuntimeParseError
+
 
 def VectorToTuple(vector):
 	return (vector.x, vector.y)
@@ -269,14 +272,43 @@ class PointInRegionDistribution(VectorDistribution):
 				writeSMTtoFile(smt_file_path, "PointInRegionDistribution ALREADY EXISTS IN CACHED_VARIABLES")
 			output_var = cached_variables[self]
 
-		elif isinstance(self._conditioned, Vector):
+		if isinstance(self.region, TypecheckedDistribution):
+			region = self.region.dist
+		else:
+			region = self.region
+
+		output_var = None
+		if isinstance(self._conditioned, Vector):
 			vector = self._conditioned
 			if debug:
 				writeSMTtoFile(smt_file_path, "PointInRegionDistribution._conditioned exists : " + str(self._conditioned))
 			output_var = (str(vector.x), str(vector.y))
 
+		elif isinstance(region, UniformDistribution):
+			possibleRegions = region.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
+			x = findVariableName(smt_file_path, cached_variables, cached_variables['variables'], 'x')
+			y = findVariableName(smt_file_path, cached_variables, cached_variables['variables'], 'y')
+			output_var = (x,y)
+
+			for reg in possibleRegions:
+				point = reg.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+				smt_encoding = vector_operation_smt("equal", output_var, point)
+				smt_encoding = smt_assert(None, smt_encoding)
+				writeSMTtoFile(smt_file_path, smt_encoding)
+		elif isinstance(region, Options):
+			import scenic.domains.driving.roads as roads
+			if region.checkOptionsType(roads.NetworkElement):
+				output_var = region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+			else:
+				raise NotImplementedError
+
+		elif isinstance(region, Region):
+			output_var = region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 		else:
-			output_var = self.region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+			raise NotImplementedError
+
+		if output_var is None:
+			raise RuntimeParseError('Identified Case not Considered!')
 
 		return cacheVarName(cached_variables, self, output_var)
 
@@ -1334,10 +1366,17 @@ class IntersectionRegion(Region):
 			output_var = cached_variables[self]
 			return output_var
 
+		x = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'x')
+		y = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'y')
+		output = (x,y)
+
 		for region in self.regions:
 			output_var = region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+			smt_encoding = vector_operation_smt(output, "equal", output_var)
+			smt_encoding = smt_assert(None, smt_encoding)
+			writeSMTtoFile(smt_file_path, smt_encoding)
 
-		return cacheVarName(cached_variables, self, output_var)
+		return cacheVarName(cached_variables, self, output)
 
 	def sampleGiven(self, value):
 		regs = [value[reg] for reg in self.regions]

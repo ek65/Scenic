@@ -100,7 +100,6 @@ class DrivingObject:
     """
 
     elevation[dynamic]: None
-
     requireVisible: False
 
     # Convenience properties

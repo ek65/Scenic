@@ -9,12 +9,7 @@ param carla_map = 'Town05'
 model scenic.simulators.carla.model #located in scenic/simulators/carla/model.scenic
 
 
-# laneSecsWithLeftLane = filter(lambda i: i._laneToLeft != None, network.laneSections)
-# laneSec = Uniform(*laneSecsWithLeftLane)
-# ego = Car on laneSec
-# other = Car on ego.laneSection
+laneSecsWithLeftLane = filter(lambda i: i._laneToLeft != None, network.laneSections)
+laneSec = Uniform(*laneSecsWithLeftLane)
 
-road = Uniform(*network.roads)
-lane = Uniform(*road.lanes)
-laneSec = Uniform(*lane.sections)
 ego = Car on laneSec

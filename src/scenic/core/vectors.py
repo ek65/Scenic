@@ -321,6 +321,11 @@ class Vector(Samplable, collections.abc.Sequence):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Vector Class")
 
+		if self in cached_variables.keys():
+			if debug:
+				writeSMTtoFile(smt_file_path, "Vector already cached")
+			return cached_variables[self]
+
 		x = checkAndEncodeSMT(smt_file_path, cached_variables, self.x, debug = debug)
 		y = checkAndEncodeSMT(smt_file_path, cached_variables, self.y, debug = debug)
 		return cacheVarName(cached_variables, self, (x,y))
@@ -361,8 +366,8 @@ class Vector(Samplable, collections.abc.Sequence):
 		cos_mul_y = smt_multiply(cos, y)
 		sin_mul_x = smt_multiply(sin, x)
 
-		x_name = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'x')
-		y_name = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'y')
+		x_name = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+		y_name = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 
 		x_smt_encoding = smt_assert("equal", x_name, smt_subtract(cos_mul_x, sin_mul_y))
 		y_smt_encoding = smt_assert("equal", y_name, smt_add(sin_mul_x, cos_mul_y))
@@ -390,8 +395,8 @@ class Vector(Samplable, collections.abc.Sequence):
 		self_x = checkAndEncodeSMT(smt_file_path, cached_variables, self.x)
 		self_y = checkAndEncodeSMT(smt_file_path, cached_variables, self.y)
 
-		output_x = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'x')
-		output_y = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'y')
+		output_x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+		output_y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 		x_smt_encoding = smt_assert("equal", output_x, smt_add(x_smt_var, self_x))
 		y_smt_encoding = smt_assert("equal", output_y, smt_add(y_smt_var, self_y))
 
@@ -429,7 +434,7 @@ class Vector(Samplable, collections.abc.Sequence):
 		sq_y1_y2 = smt_multiply(y1_y2, y1_y2)
 		summation = smt_add(sq_x1_x2, sq_y1_y2)
 
-		output_dist = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'distance')
+		output_dist = findVariableName(smt_file_path, cached_variables, 'distance', debug=debug)
 		sq_var_name = smt_multiply(output_dist, output_dist)
 		smt_encoding = smt_assert("equal", sq_var_name, summation)
 		writeSMTtoFile(smt_file_path, smt_encoding)
@@ -449,7 +454,7 @@ class Vector(Samplable, collections.abc.Sequence):
 		dy = smt_assert("subtract", other_y, vec_y)
 		smt_atan = "(arctan "+smt_divide(dy, dx)+")" 
 		subtraction = smt_subtract(smt_atan, smt_divide('3.1416','2'))
-		theta = normalizeAngle_SMT(subtraction)
+		theta = normalizeAngle_SMT(subtraction, debug=debug)
 		return theta
 
 	@scalarOperator
@@ -472,7 +477,7 @@ class Vector(Samplable, collections.abc.Sequence):
 		smt_atan_other = "(arctan (div "+smt_divide(other_y, other_x)+")" 
 		smt_atan_vec   = "(arctan (div "+smt_divide(vec_y, vec_x)+")" 
 		subtraction = smt_subtract(smt_atan_other, smt_atan_vec)
-		theta = normalizeAngle_SMT(subtraction)
+		theta = normalizeAngle_SMT(subtraction, debug=debug)
 		return theta
 
 	@scalarOperator
@@ -486,7 +491,7 @@ class Vector(Samplable, collections.abc.Sequence):
 		square_x = smt_multiply(vec_x, vec_x)
 		square_y = smt_multiply(vec_y, vec_y)
 		summation = smt_add(square_x, square_y)
-		norm_var = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'vec_norm')
+		norm_var = findVariableName(smt_file_path, cached_variables, 'vec_norm', debug=debug)
 		sq_norm_var = smt_multiply(norm_var, norm_var)
 		smt_encoding = smt_assert("equal", sq_norm_var, summation)
 		writeSMTtoFile(smt_file_path, smt_encoding)
@@ -504,13 +509,13 @@ class Vector(Samplable, collections.abc.Sequence):
 		square_x = smt_multiply(vec_x, vec_x)
 		square_y = smt_multiply(vec_y, vec_y) 
 		summation = smt_add(square_x, square_y)
-		norm_var = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'vec_norm')
+		norm_var = findVariableName(smt_file_path, cached_variables, 'vec_norm', debug=debug)
 		sq_norm_var = smt_multiply(norm_var, norm_var) 
 		norm_smt_encoding = smt_assert("equal", sq_norm_var, summation)
 		x = smt_divide(vec_x, norm_var)
 		y = smt_divide(vec_y, norm_var)
-		output_x = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'x')
-		output_y = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'y')
+		output_x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+		output_y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 		smt_x = smt_assert("equal", output_x, x)
 		smt_y = smt_assert("equal", output_y, y)
 		writeSMTtoFile(smt_file_path, norm_smt_encoding)
@@ -531,8 +536,8 @@ class Vector(Samplable, collections.abc.Sequence):
 		self_vector = checkAndEncodeSMT(smt_file_path, cached_variables, self)
 		summation_vector = vector_operation_smt(self_vector, "add", variable)
 
-		output_x = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'x')
-		output_y = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'y')
+		output_x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+		output_y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 
 		(x, y) = vector_operation_smt((output_x, output_y), "equal", summation_vector)
 		writeSMTtoFile(smt_file_path, smt_assert(None, x))
@@ -561,8 +566,8 @@ class Vector(Samplable, collections.abc.Sequence):
 		self_vector = checkAndEncodeSMT(smt_file_path, cached_variables, self)
 		subtraction_vector = vector_operation_smt(self_vector, "subtract", variable)
 
-		output_x = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'x')
-		output_y = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'y')
+		output_x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+		output_y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 
 		(x, y) = vector_operation_smt((output_x, output_y), "equal", subtraction_vector)
 		writeSMTtoFile(smt_file_path, smt_assert(None, x))
@@ -581,8 +586,8 @@ class Vector(Samplable, collections.abc.Sequence):
 		self_vector = checkAndEncodeSMT(smt_file_path, cached_variables, self)
 		subtraction_vector = vector_operation_smt(variable, "subtract", self_vector)
 
-		output_x = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'x')
-		output_y = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'y')
+		output_x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+		output_y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 
 		(x, y) = vector_operation_smt((output_x, output_y), "equal", subtraction_vector)
 		writeSMTtoFile(smt_file_path, smt_assert(None, x))
@@ -600,8 +605,8 @@ class Vector(Samplable, collections.abc.Sequence):
 		(vec_x, vec_y) = checkAndEncodeSMT(smt_file_path, cached_variables, self)
 		mul_x = smt_multiply(scalar, vec_x)
 		mul_y = smt_multiply(scalar, vec_y)
-		output_x = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'x')
-		output_y = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'y')
+		output_x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+		output_y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 		x_smt_encoding = smt_assert("equal", output_x, mul_x)
 		y_smt_encoding = smt_assert("equal", output_y, mul_y)
 		writeSMTtoFile(smt_file_path, x_smt_encoding)
@@ -627,8 +632,8 @@ class Vector(Samplable, collections.abc.Sequence):
 		(vec_x, vec_y) = checkAndEncodeSMT(smt_file_path, cached_variables, self)
 		div_x = smt_divide(vec_x, scalar)
 		div_y = smt_divide(vec_y, scalar)
-		output_x = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'x')
-		output_y = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'y')
+		output_x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+		output_y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 		x_smt_encoding = smt_assert("equal", output_x, div_x)
 		y_smt_encoding = smt_assert("equal", output_y, div_y)
 		writeSMTtoFile(smt_file_path, x_smt_encoding)
@@ -641,7 +646,7 @@ class Vector(Samplable, collections.abc.Sequence):
 	def lenEncodeSMT(self, smt_file_path, cached_variables, debug=False):
 		if debug:
 			writeSMTtoFile(smt_file_path, "lenEncodeSMT")
-		length_var = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'vec_length')
+		length_var = findVariableName(smt_file_path, cached_variables, 'vec_length', debug=debug)
 		smt_encoding = smt_assert("equal", length_var, str(len(self.coordinates)))
 		writeSMTtoFile(smt_file_path, smt_encoding)
 		return length_var
@@ -654,7 +659,7 @@ class Vector(Samplable, collections.abc.Sequence):
 			writeSMTtoFile(smt_file_path, "getitemEncodeSMT")
 		index = checkAndEncodeSMT(smt_file_path, cached_variables, index)
 		vec = checkAndEncodeSMT(smt_file_path, cached_variables, self)
-		element = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'vec_element')
+		element = findVariableName(smt_file_path, cached_variables, 'vec_element', debug=debug)
 
 		## TODO: Encode Array!
 		raise NotImplementedError
@@ -691,7 +696,7 @@ class Vector(Samplable, collections.abc.Sequence):
 		x_eq = smt_equal(vec_x, other_x)
 		y_eq = smt_equal(vec_y, other_y)
 		eq_smt = smt_and(x_eq, y_eq)
-		eq_var = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], "eq_bool", class_type = "Bool")
+		eq_var = findVariableName(smt_file_path, cached_variables, "eq_bool", class_type = "Bool", debug=debug)
 		smt_encoding = smt_assert("equal", eq_var, eq_smt)
 
 		writeSMTtoFile(smt_file_path, smt_encoding)
@@ -787,7 +792,7 @@ class VectorField:
 			print("NotImplemented")
 			raise NotImplementedError
 
-		var_name = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'vectorField')
+		var_name = findVariableName(smt_file_path, cached_variables, 'vectorField', debug=debug)
 
 		if method == VectorField.__getitem__:
 			""" 

@@ -19,8 +19,8 @@ def sin(x) -> float:
 	return math.sin(x)
 
 def sinEncodeSMT(smt_file_path, cached_variables, x, debug=False):
-	var = checkAndEncodeSMT(smt_file_path, cached_variables, x, debug)
-	output = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'sine')
+	var = checkAndEncodeSMT(smt_file_path, cached_variables, x, debug=debug) 
+	output = findVariableName(smt_file_path, cached_variables, 'sine', debug=debug)
 	smt_encoding = smt_equal(output, '(sin '+var+')')
 	writeSMTtoFile(smt_file_path, smt_encoding)
 	return output
@@ -31,7 +31,7 @@ def cos(x) -> float:
 
 def cosEncodeSMT(smt_file_path, cached_variables, x, debug=False):
 	var = checkAndEncodeSMT(smt_file_path, cached_variables, x, debug)
-	output = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'sine')
+	output = findVariableName(smt_file_path, cached_variables, 'sine', debug=debug)
 	smt_encoding = smt_equal(output, '(cos '+var+')')
 	writeSMTtoFile(smt_file_path, smt_encoding)
 	return output

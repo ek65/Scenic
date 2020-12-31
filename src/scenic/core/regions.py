@@ -170,10 +170,10 @@ def encodePolygonalRegion_SMT(smt_file_path, cached_variables, triangles, debug=
 	triangle_list = triangles if isinstance(triangles, list) else list(triangles)
 	cumulative_smt_encoding = None
 
-	s = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 's')
-	t = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 't')
-	x = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'x')
-	y = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'y')
+	s = findVariableName(smt_file_path, cached_variables, 's', debug=debug)
+	t = findVariableName(smt_file_path, cached_variables, 't', debug=debug)
+	x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+	y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 
 	# 0 <= s <= 1
 	s_constraint = smt_assert("and", smt_lessThanEq("0",s), smt_lessThanEq(s,"1"))
@@ -269,8 +269,8 @@ class PointInRegionDistribution(VectorDistribution):
 
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "PointInRegionDistribution ALREADY EXISTS IN CACHED_VARIABLES")
-			output_var = cached_variables[self]
+				writeSMTtoFile(smt_file_path, "PointInRegionDistribution already cached")
+			return cached_variables[self]
 
 		if isinstance(self.region, TypecheckedDistribution):
 			region = self.region.dist
@@ -279,36 +279,40 @@ class PointInRegionDistribution(VectorDistribution):
 
 		output_var = None
 		if isinstance(self._conditioned, Vector):
-			vector = self._conditioned
 			if debug:
-				writeSMTtoFile(smt_file_path, "PointInRegionDistribution._conditioned exists : " + str(self._conditioned))
+				writeSMTtoFile(smt_file_path, "PointInRegionDistribution is conditioned : " + str(self._conditioned))
+			vector = self._conditioned
 			output_var = (str(vector.x), str(vector.y))
 
 		elif isinstance(region, UniformDistribution):
-			possibleRegions = region.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
-			x = findVariableName(smt_file_path, cached_variables, cached_variables['variables'], 'x')
-			y = findVariableName(smt_file_path, cached_variables, cached_variables['variables'], 'y')
+			possibleRegions = region._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
+			if possibleRegions is None:
+				return None
+			x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+			y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 			output_var = (x,y)
 
 			for reg in possibleRegions:
 				point = reg.encodeToSMT(smt_file_path, cached_variables, debug=debug)
-				smt_encoding = vector_operation_smt("equal", output_var, point)
+				smt_encoding = vector_operation_smt(output_var, "equal", point)
 				smt_encoding = smt_assert(None, smt_encoding)
 				writeSMTtoFile(smt_file_path, smt_encoding)
+
 		elif isinstance(region, Options):
 			import scenic.domains.driving.roads as roads
-			if region.checkOptionsType(roads.NetworkElement):
-				output_var = region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+			if region._conditioned.checkOptionsType(roads.NetworkElement):
+				output_var = region._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 			else:
 				raise NotImplementedError
 
 		elif isinstance(region, Region):
-			output_var = region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+			output_var = region._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+		
 		else:
 			raise NotImplementedError
 
 		if output_var is None:
-			raise RuntimeParseError('Identified Case not Considered!')
+			return None
 
 		return cacheVarName(cached_variables, self, output_var)
 
@@ -578,7 +582,7 @@ class SectorRegion(Region):
 
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "SectorRegion ALREADY EXISTS IN CACHED_VARIABLES")
+				writeSMTtoFile(smt_file_path, "SectorRegion already cached")
 			return cached_variables[self]
 
 		""" Let a line defined by two points `a` and `b`, with a -> b vector direction of interest,
@@ -590,15 +594,17 @@ class SectorRegion(Region):
 		"""
 
 		# Instantiate variables to return
-		(output_x, output_y) = cached_variables['current_obj']
+		(output_x, output_y) = cached_variables['current_obj_pos']
+		output_x = str(output_x)
+		output_y = str(output_y)
 		ego_x = str(cached_variables['ego'].x)
 		ego_y = str(cached_variables['ego'].y)
 
 		# Check whether there are any other distributions to encode first
-		(center_x, center_y) = checkAndEncodeSMT(smt_file_path, cached_variables, self.center)
-		radius = checkAndEncodeSMT(smt_file_path, cached_variables, self.radius)
-		heading = checkAndEncodeSMT(smt_file_path, cached_variables, self.heading)
-		angle = checkAndEncodeSMT(smt_file_path, cached_variables, self.angle)
+		(center_x, center_y) = checkAndEncodeSMT(smt_file_path, cached_variables, self.center, debug=debug)
+		radius = checkAndEncodeSMT(smt_file_path, cached_variables, self.radius, debug=debug)
+		heading = checkAndEncodeSMT(smt_file_path, cached_variables, self.heading, debug=debug)
+		angle = checkAndEncodeSMT(smt_file_path, cached_variables, self.angle, debug=debug)
 
 		# Encode and write to file, a contraint for a circle
 		if debug: 
@@ -821,15 +827,19 @@ class PolylineRegion(Region):
 	def encodeToSMT(self, smt_file_path, cached_variables, debug = False):
 		if debug:
 			writeSMTtoFile(smt_file_path, "PolyLineRegion")
+
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "PolyLineRegion ALREADY EXISTS IN CACHED_VARIABLES")
+				writeSMTtoFile(smt_file_path, "PolyLineRegion already cached")
 			return cached_variables[self]
 
-		point = cached_variables['current_obj']
+		(x,y) = cached_variables['current_obj_pos']
+		x = str(x)
+		y = str(y)
+
 		linStringList = pruneValidLines(smt_file_path, cached_variables, self.lineString, debug=False)
-		point = encodeLine_SMT(smt_file_path, cached_variables, linStringList, point, debug=False)
-		return cacheVarName(cached_variables, self, point)
+		(x,y) = encodeLine_SMT(smt_file_path, cached_variables, linStringList, (x,y), debug=False)
+		return cacheVarName(cached_variables, self, (x,y))
 
 	@classmethod
 	def segmentsOf(cls, lineString):
@@ -1366,8 +1376,8 @@ class IntersectionRegion(Region):
 			output_var = cached_variables[self]
 			return output_var
 
-		x = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'x')
-		y = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'y')
+		x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+		y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 		output = (x,y)
 
 		for region in self.regions:

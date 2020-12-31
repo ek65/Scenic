@@ -1,0 +1,246 @@
+Searching 350 files for "smt_assert"
+
+/Users/edwardkim/Desktop/Scenic_Query/Scenic/src/scenic/core/distributions.py:
+   72  	return "(ite "+predicate+" "+output1+" "+output2+")"
+   73  
+   74: def smt_assert(operation_type, var1, var2=None):
+   75  	assert(isinstance(var1, str))
+   76  	assert(isinstance(var2, str) or var2==None)
+   ..
+  138  def normalizeAngle_SMT(original_angle, debug=False):
+  139  	angle = findVariableName(smt_file_path, cached_variables, 'angle', debug=debug)
+  140: 	ite1 = smt_assert("equal", angle , smt_ite(smt_lessThan("0", original_angle), \
+  141  		smt_mod(original_angle, "6.2832"), original_angle))
+  142: 	ite2 = smt_assert("equal", angle , smt_ite(smt_lessThan(original_angle, "0"), \
+  143  		smt_mod(original_angle, "-6.2832"), original_angle))
+  144  
+  ...
+  147  
+  148  	theta = findVariableName(smt_file_path, cached_variables, 'theta', debug=debug)
+  149: 	theta_encoding = smt_assert("equal", theta, angle)
+  150: 	angleTo_encoding1 = smt_assert("equal", theta, smt_ite(smt_lessThanEq("3.1416",angle), smt_subtract(angle,"6.2832"), angle))
+  151: 	angleTo_encoding2 = smt_assert("equal", theta, smt_ite(smt_lessThanEq(angle, "-3.1416"), smt_add(angle,"6.2832"), angle))
+  152  
+  153  	writeSMTtoFile(smt_file_path, theta_encoding)
+  ...
+  987  			if self.operator == '__add__' or self.operator == '__radd__':
+  988  				summation = smt_add(cached_variables[self.object], operand_smt)
+  989: 				smt_encoding = smt_assert("equal", var_name, summation)
+  990  
+  991  			elif self.operator == '__mul__' or self.operator == '__rmul__':
+  992  				multiplication = smt_multiply(cached_variables[self.object], operand_smt)
+  993: 				smt_encoding = smt_assert("equal", var_name, multiplication)
+  994  
+  995  			elif self.operator == '__sub__':
+  996  				subtraction = smt_subtract(cached_variables[self.object], operand_smt)
+  997: 				smt_encoding = smt_assert("equal", var_name, subtraction)
+  998  
+  999  			elif self.operator == '__rsub__':
+ 1000  				subtraction = smt_subtract(cached_variables[self.operands[0]], operand_smt)
+ 1001: 				smt_encoding = smt_assert("equal", var_name, subtraction)
+ 1002  
+ 1003  			elif self.operator == '__truediv__':
+ 1004  				truediv = smt_divide(cached_variables[self.object], operand_smt)
+ 1005: 				smt_encoding = smt_assert("equal", var_name, truediv)
+ 1006  
+ 1007  			elif self.operator == '__rtruediv__':
+ 1008  				division = smt_divide(cached_variables[self.operands[0]], operand_smt)
+ 1009: 				smt_encoding = smt_assert("equal", var_name, division)
+ 1010  
+ 1011  			elif self.operator == '__mod__':
+ 1012  				modular = smt_mod(cached_variables[self.object], operand_smt)
+ 1013: 				smt_encoding = smt_assert("equal", var_name, modular)
+ 1014  
+ 1015  			elif self.operator == '__rmod__':
+ 1016  				modular = smt_mod(cached_variables[self.operands[0]], operand_smt)
+ 1017: 				smt_encoding = smt_assert("equal", var_name, modular)
+ 1018  
+ 1019  			else:# TODO: floordiv, rfloordiv, divmod, rdivmod, pow, rpow
+ ....
+ 1178  		lower_bound = smt_lessThanEq(low, var_name)
+ 1179  		upper_bound = smt_lessThanEq(var_name, high)
+ 1180: 		smt_encoding = smt_assert("and", lower_bound, upper_bound)
+ 1181  		writeSMTtoFile(smt_file_path, smt_encoding)
+ 1182  
+ ....
+ 1353  		lower_bound = smt_lessThanEq(low, var_name)
+ 1354  		upper_bound = smt_lessThanEq(var_name, high)
+ 1355: 		smt_encoding = smt_assert("and", lower_bound, upper_bound)
+ 1356  		writeSMTtoFile(smt_file_path, smt_encoding)
+ 1357  		return cacheVarName(cached_variables, self, var_name)
+ ....
+ 1465  		lower_bound = smt_lessThanEq(low, var_name)
+ 1466  		upper_bound = smt_lessThanEq(var_name, high)
+ 1467: 		smt_encoding = smt_assert("and", lower_bound, upper_bound)
+ 1468  		writeSMTtoFile(smt_file_path, smt_encoding)
+ 1469  		return cacheVarName(cached_variables, self, var_name)
+ ....
+ 1574  					count += 1
+ 1575  
+ 1576: 				cumulative_smt_encoding = smt_assert(variable, "equal", cumulative_smt_encoding)
+ 1577  				writeSMTtoFile(smt_file_path, cumulative_smt_encoding)
+ 1578  				return variable
+
+/Users/edwardkim/Desktop/Scenic_Query/Scenic/src/scenic/core/regions.py:
+   12  from scenic.core.distributions import (Samplable, RejectionException, needsSampling,
+   13                                         distributionMethod, smt_add, smt_subtract, smt_multiply, 
+   14:                                        smt_divide, smt_and, smt_equal, smt_mod, smt_assert, findVariableName,
+   15                                         checkAndEncodeSMT, writeSMTtoFile, cacheVarName, smt_lessThan, smt_lessThanEq,
+   16                                         smt_ite, normalizeAngle_SMT, smt_or, vector_operation_smt, Options, isNotConditioned,
+   ..
+  177  
+  178  	# 0 <= s <= 1
+  179: 	s_constraint = smt_assert("and", smt_lessThanEq("0",s), smt_lessThanEq(s,"1"))
+  180: 	t_constraint = smt_assert("and", smt_lessThanEq("0",t), smt_lessThanEq(t,"1"))
+  181: 	s_and_t_constraint = smt_assert("<=", smt_add(s,t), "1")
+  182  	writeSMTtoFile(smt_file_path, s_constraint)
+  183  	writeSMTtoFile(smt_file_path, t_constraint)
+  ...
+  225  	plt.show()
+  226  
+  227: 	final_smt_encoding = smt_assert(None, cumulative_smt_encoding)
+  228  	writeSMTtoFile(smt_file_path, final_smt_encoding)
+  229  
+  ...
+  294  				point = reg.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+  295  				smt_encoding = vector_operation_smt(output_var, "equal", point)
+  296: 				smt_encoding = smt_assert(None, smt_encoding)
+  297  				writeSMTtoFile(smt_file_path, smt_encoding)
+  298  
+  ...
+  612  		summation  = smt_add(square_center_x, square_center_y)
+  613  		circle_smt = smt_lessThanEq(summation, square_radius)
+  614: 		writeSMTtoFile(smt_file_path, smt_assert(None, circle_smt))
+  615  
+  616  		# get the left position of the sector with respect to the center position
+  ...
+  637  		subtraction_left = smt_subtract(Dx_Ty_left, Dy_Tx_left)
+  638  		right_of_leftLine_constraint = smt_lessThanEq(subtraction_left, "0")
+  639: 		writeSMTtoFile(smt_file_path, smt_assert(None, right_of_leftLine_constraint))
+  640  
+  641  		# compute "0 >= sign(Dx * Ty - Dy * Tx)" for a given point to be on the right side of the sector's left line
+  ...
+  650  		subtraction_right = smt_subtract(Dx_Ty_right, Dy_Tx_right)
+  651  		left_of_rightLine_constraint = smt_lessThanEq("0", subtraction_right)
+  652: 		writeSMTtoFile(smt_file_path, smt_assert(None, left_of_rightLine_constraint))
+  653  
+  654  		return cacheVarName(cached_variables, self, (output_x, output_y))
+  ...
+ 1375  			output_var = region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+ 1376  			smt_encoding = vector_operation_smt(output, "equal", output_var)
+ 1377: 			smt_encoding = smt_assert(None, smt_encoding)
+ 1378  			writeSMTtoFile(smt_file_path, smt_encoding)
+ 1379  
+
+/Users/edwardkim/Desktop/Scenic_Query/Scenic/src/scenic/core/vectors.py:
+   15      needsSampling, makeOperatorHandler, distributionMethod, distributionFunction,
+   16  	RejectionException, smt_add, smt_subtract, smt_multiply, smt_divide, smt_and, 
+   17: 	smt_equal, smt_mod, smt_assert, findVariableName,isNotConditioned,
+   18  	checkAndEncodeSMT, writeSMTtoFile, cacheVarName, smt_lessThan, smt_lessThanEq, smt_ite, normalizeAngle_SMT, vector_operation_smt)
+   19  from scenic.core.lazy_eval import valueInContext, needsLazyEvaluation, makeDelayedFunctionCall
+   ..
+  365  		y_name = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+  366  
+  367: 		x_smt_encoding = smt_assert("equal", x_name, smt_subtract(cos_mul_x, sin_mul_y))
+  368: 		y_smt_encoding = smt_assert("equal", y_name, smt_add(sin_mul_x, cos_mul_y))
+  369  
+  370  		writeSMTtoFile(smt_file_path, x_smt_encoding)
+  ...
+  393  		output_x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+  394  		output_y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+  395: 		x_smt_encoding = smt_assert("equal", output_x, smt_add(x_smt_var, self_x))
+  396: 		y_smt_encoding = smt_assert("equal", output_y, smt_add(y_smt_var, self_y))
+  397  
+  398  		writeSMTtoFile(smt_file_path, x_smt_encoding)
+  ...
+  432  		output_dist = findVariableName(smt_file_path, cached_variables, 'distance', debug=debug)
+  433  		sq_var_name = smt_multiply(output_dist, output_dist)
+  434: 		smt_encoding = smt_assert("equal", sq_var_name, summation)
+  435  		writeSMTtoFile(smt_file_path, smt_encoding)
+  436  		return output_dist
+  ...
+  446  		(other_x, other_y) = checkAndEncodeSMT(smt_file_path, cached_variables, other)
+  447  		(vec_x, vec_y) = checkAndEncodeSMT(smt_file_path, cached_variables, self)
+  448: 		dx = smt_assert("subtract", other_x, vec_x)
+  449: 		dy = smt_assert("subtract", other_y, vec_y)
+  450  		smt_atan = "(arctan "+smt_divide(dy, dx)+")" 
+  451  		subtraction = smt_subtract(smt_atan, smt_divide('3.1416','2'))
+  ...
+  489  		norm_var = findVariableName(smt_file_path, cached_variables, 'vec_norm', debug=debug)
+  490  		sq_norm_var = smt_multiply(norm_var, norm_var)
+  491: 		smt_encoding = smt_assert("equal", sq_norm_var, summation)
+  492  		writeSMTtoFile(smt_file_path, smt_encoding)
+  493  		return norm_var
+  ...
+  507  		norm_var = findVariableName(smt_file_path, cached_variables, 'vec_norm', debug=debug)
+  508  		sq_norm_var = smt_multiply(norm_var, norm_var) 
+  509: 		norm_smt_encoding = smt_assert("equal", sq_norm_var, summation)
+  510  		x = smt_divide(vec_x, norm_var)
+  511  		y = smt_divide(vec_y, norm_var)
+  512  		output_x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+  513  		output_y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+  514: 		smt_x = smt_assert("equal", output_x, x)
+  515: 		smt_y = smt_assert("equal", output_y, y)
+  516  		writeSMTtoFile(smt_file_path, norm_smt_encoding)
+  517  		writeSMTtoFile(smt_file_path, smt_x)
+  ...
+  536  
+  537  		(x, y) = vector_operation_smt((output_x, output_y), "equal", summation_vector)
+  538: 		writeSMTtoFile(smt_file_path, smt_assert(None, x))
+  539: 		writeSMTtoFile(smt_file_path, smt_assert(None, y))
+  540  		return (output_x, output_y)
+  541  
+  ...
+  566  
+  567  		(x, y) = vector_operation_smt((output_x, output_y), "equal", subtraction_vector)
+  568: 		writeSMTtoFile(smt_file_path, smt_assert(None, x))
+  569: 		writeSMTtoFile(smt_file_path, smt_assert(None, y))
+  570  		return (output_x, output_y)
+  571  
+  ...
+  586  
+  587  		(x, y) = vector_operation_smt((output_x, output_y), "equal", subtraction_vector)
+  588: 		writeSMTtoFile(smt_file_path, smt_assert(None, x))
+  589: 		writeSMTtoFile(smt_file_path, smt_assert(None, y))
+  590  		return (output_x, output_y)
+  591  
+  ...
+  603  		output_x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+  604  		output_y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+  605: 		x_smt_encoding = smt_assert("equal", output_x, mul_x)
+  606: 		y_smt_encoding = smt_assert("equal", output_y, mul_y)
+  607  		writeSMTtoFile(smt_file_path, x_smt_encoding)
+  608  		writeSMTtoFile(smt_file_path, y_smt_encoding)
+  ...
+  630  		output_x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+  631  		output_y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+  632: 		x_smt_encoding = smt_assert("equal", output_x, div_x)
+  633: 		y_smt_encoding = smt_assert("equal", output_y, div_y)
+  634  		writeSMTtoFile(smt_file_path, x_smt_encoding)
+  635  		writeSMTtoFile(smt_file_path, y_smt_encoding)
+  ...
+  643  			writeSMTtoFile(smt_file_path, "lenEncodeSMT")
+  644  		length_var = findVariableName(smt_file_path, cached_variables, 'vec_length', debug=debug)
+  645: 		smt_encoding = smt_assert("equal", length_var, str(len(self.coordinates)))
+  646  		writeSMTtoFile(smt_file_path, smt_encoding)
+  647  		return length_var
+  ...
+  659  		## TODO: Encode Array!
+  660  		raise NotImplementedError
+  661: 		smt_encoding = smt_assert("equal", element, vec[index])
+  662  		writeSMTtoFile(smt_file_path, smt_encoding)
+  663  		return cacheVarName(cached_variables, self, (element))
+  ...
+  693  		eq_smt = smt_and(x_eq, y_eq)
+  694  		eq_var = findVariableName(smt_file_path, cached_variables, "eq_bool", class_type = "Bool", debug=debug)
+  695: 		smt_encoding = smt_assert("equal", eq_var, eq_smt)
+  696  
+  697  		writeSMTtoFile(smt_file_path, smt_encoding)
+  ...
+  797  			pos = obj.arguments[0]._conditioned
+  798  			heading = self.__getitem__(pos)
+  799: 			smt_encoding = smt_assert("equal", var_name, str(heading))
+  800  			writeSMTtoFile(smt_file_path, smt_encoding)
+  801  			if debug:
+
+54 matches across 3 files

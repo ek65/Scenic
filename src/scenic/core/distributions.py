@@ -224,11 +224,26 @@ def cacheVarName(cached_variables, obj, var_names):
 
 	if len(var_names) == 1:
 		var_names = var_names[0]
+
 	cached_variables[obj] = var_names
 	return var_names
 
 def isNotConditioned(obj):
 	return obj == obj._conditioned
+
+def resetConditionedVar(obj):
+    obj._conditioned = obj
+    if (obj._dependencies is None):
+        return None
+    
+    for dep in obj._dependencies:
+        resetConditionedVar(dep)
+    return None
+
+def resetConditionedObj(scenario):
+    for obj in scenario.objects:
+        resetConditionedVar(obj.position)
+        resetConditionedVar(obj.heading)
 
 ## Misc
 def dependencies(thing):
@@ -1029,6 +1044,9 @@ class OperatorDistribution(Distribution):
 		elif self.operator == '__call__':
 			raise NotImplementedError
 		else:
+			if debug:
+				print("self.operator: ", self.operator)
+				writeSMTtoFile(smt_file_path, "self.operator: " + str(self.operator))
 			raise NotImplementedError
 
 		return cacheVarName(cached_variables, self, var_name)
@@ -1546,15 +1564,15 @@ class Options(MultiplexerDistribution):
 
 		if encode:
 			if self.checkOptionsType(roads.NetworkElement):
-				valid_elems = set()
+				valid_elems = []
 				if self is self._conditioned:
 					for opt in options:
 						if opt.polygon.contains(shapely.geometry.Point(cached_variables['current_obj_pos'])):
-							valid_elems.add(opt)
+							valid_elems.append(opt)
 
 					if len(valid_elems) == 0:
 						return None
-					self._conditioned = Option(valid_elems)
+					self._conditioned = Options(valid_elems)
 				else:
 					valid_elems = self._conditioned.options
 
@@ -1562,11 +1580,16 @@ class Options(MultiplexerDistribution):
 				y = findVariableName(smt_file_path, cached_variables, "y", debug=debug)
 				output = (x,y)
 
+				if debug:
+					writeSMTtoFile(smt_file_path, "# of network elements: "+ str(len(valid_elems)))
+ 
 				for elem in valid_elems:
-					point = elem.encodeToSMT(smt_file_path, cached_variables, debug=False)
+					if debug:
+						writeSMTtoFile(smt_file_path, "Options elem: "+str(type(elem)))
+					point = elem.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 					(x_cond, y_cond) = vector_operation_smt(point, "equal", output)
-					writeSMTtoFile(smt_file_path, x_cond)
-					writeSMTtoFile(smt_file_path, y_cond)
+					writeSMTtoFile(smt_file_path, smt_assert(None, x_cond))
+					writeSMTtoFile(smt_file_path, smt_assert(None, y_cond))
 				return output
 
 			elif self.checkOptionsType(class_type = float) or self.checkOptionsType(class_type = int):

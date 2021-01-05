@@ -378,9 +378,6 @@ class Road(LinearElement):
         if debug:
             writeSMTtoFile(smt_file_path, "Class Road encodeToSMT")
 
-        if self in cached_variables.keys():
-            return cached_variables[self]
-
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
         return polygonalRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
@@ -508,6 +505,9 @@ class LaneGroup(LinearElement):
     #: Opposite lane group of the same road, if any.
     _opposite: Union[LaneGroup, None] = None
 
+    def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+        raise NotImplementedError
+
     @property
     def sidewalk(self) -> Sidewalk:
         """The adjacent sidewalk; rejects if there is none."""
@@ -563,10 +563,7 @@ class Lane(_ContainsCenterline, LinearElement):
     def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "roads.py Lane Class")
-        
-        if self in cached_variables.keys():
-            return cached_variables[self]
-
+    
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
         return polygonalRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
@@ -608,9 +605,6 @@ class RoadSection(LinearElement):
     def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "roads.py Class RoadSection encodeToSMT")
-        
-        if self in cached_variables.keys():
-            return cached_variables[self]
 
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
@@ -701,9 +695,6 @@ class LaneSection(_ContainsCenterline, LinearElement):
     def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "roads.py Class LaneSection encodeToSMT")
-        
-        if self in cached_variables.keys():
-            return cached_variables[self]
 
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
@@ -741,6 +732,7 @@ class LaneSection(_ContainsCenterline, LinearElement):
             if current is None:
                 return None
         return current
+
 
 @attr.s(auto_attribs=True, kw_only=True, repr=False)
 class Sidewalk(_ContainsCenterline, LinearElement):
@@ -787,9 +779,6 @@ class Intersection(NetworkElement):
     def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "roads.py Class Intersection encodeToSMT")
-        
-        if self in cached_variables.keys():
-            return cached_variables[self]
 
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)

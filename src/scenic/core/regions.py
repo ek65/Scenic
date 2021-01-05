@@ -214,14 +214,15 @@ def encodePolygonalRegion_SMT(smt_file_path, cached_variables, triangles, debug=
 		else:
 			cumulative_smt_encoding = smt_or(cumulative_smt_encoding, smt_encoding)
 
-		#### For testing only -- to be deleted
+		# if debug:
 		plt.plot(*triangle.exterior.xy, color='g')
 
-		# count += 1
-		# if count >= 1:
-		# 	break
-		############
+		if debug:
+			writeSMTtoFile(smt_file_path, "p0: "+str(p0))
+			writeSMTtoFile(smt_file_path, "p1: "+str(p1))
+			writeSMTtoFile(smt_file_path, "p2: "+str(p2))
 
+	# if debug:
 	plt.show()
 
 	final_smt_encoding = smt_assert(None, cumulative_smt_encoding)
@@ -837,8 +838,8 @@ class PolylineRegion(Region):
 		x = str(x)
 		y = str(y)
 
-		linStringList = pruneValidLines(smt_file_path, cached_variables, self.lineString, debug=False)
-		(x,y) = encodeLine_SMT(smt_file_path, cached_variables, linStringList, (x,y), debug=False)
+		linStringList = pruneValidLines(smt_file_path, cached_variables, self.lineString, debug=debug)
+		(x,y) = encodeLine_SMT(smt_file_path, cached_variables, linStringList, (x,y), debug=debug)
 		return cacheVarName(cached_variables, self, (x,y))
 
 	@classmethod
@@ -1067,7 +1068,8 @@ class PolygonalRegion(Region):
 			writeSMTtoFile(smt_file_path, "Class PolygonalRegion")
 
 		if self in set(cached_variables.keys()):
-			writeSMTtoFile(smt_file_path, "PolygonalRegion ALREADY EXISTS IN CACHED_VARIABLES")
+			if debug:
+				writeSMTtoFile(smt_file_path, "PolygonalRegion ALREADY EXISTS IN CACHED_VARIABLES")
 			return cached_variables[self]
 
 		polygon_triangles = [triangle[0] for triangle in self.trianglesAndBounds]
@@ -1208,7 +1210,7 @@ class PolygonalRegion(Region):
 		return (other.polygons == self.polygons
 		        and other.orientation == self.orientation)
 
-	@cached
+	# @cached
 	def __hash__(self):
 		# TODO better way to hash mutable Shapely geometries? (also for PolylineRegion)
 		return hash((str(self.polygons), self.orientation))

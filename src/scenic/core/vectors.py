@@ -69,120 +69,129 @@ class VectorOperatorDistribution(VectorDistribution):
 
 		if debug:
 			writeSMTtoFile(smt_file_path, "VectorOperatorDistribution")
+			writeSMTtoFile(smt_file_path, "self.object: "+str(self.object))
+			writeSMTtoFile(smt_file_path, "self.operator: "+str(self.operator))
+			writeSMTtoFile(smt_file_path, "self.operands: "+str(self.operands))
 
 		if self in cached_variables.keys():
 			if debug:
 				writeSMTtoFile(smt_file_path, "Already In cached_variables")
 			return cached_variables[self]
 
+		obj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+		if obj is None:
+			return None
+		assert(len(obj)==2)
+		obj = Vector(obj[0], obj[1])
+
 		### Make sure object and operands are smt encoded
-		if operator == 'rotatedBy':
+		if self.operator == 'rotatedBy':
 			angle = self.operands[0]
 			# it is expected that the self.object in this case is of Vector class
-			output_vector = self.object.rotatedByEncodeToSMT(cached_variables, smt_file_path, angle, debug=False)
+			output_vector = obj.rotatedByEncodeToSMT(cached_variables, smt_file_path, angle, debug=debug)
 			if debug:
 				writeSMTtoFile(smt_file_path, "rotatedBy")
 			return cacheVarName(cached_variables, self, output_vector)
 
-		elif operator == 'offsetRotated':
+		elif self.operator == 'offsetRotated':
 			if debug:
 				writeSMTtoFile(smt_file_path, "offsetRotated")
 			heading = self.operands[0]
 			offset = self.operands[1]
-			output_vector = self.object.offsetRotatedEncodeToSMT(cached_variables, smt_file_path, heading, offset, debug=False)
+			output_vector = obj.offsetRotatedEncodeToSMT(cached_variables, smt_file_path, heading, offset, debug=debug)
 			return cacheVarName(cached_variables, self, output_vector)
 
-		elif operator == 'offsetRadially':
+		elif self.operator == 'offsetRadially':
 			if debug:
 				writeSMTtoFile(smt_file_path, "offsetRadially")
 			radius = self.operands[0]
 			heading = self.operands[1]
-			output_vector = self.object.offsetRadiallyEncodeSMT(cached_variables, smt_file_path, radius, heading, debug=False)
+			output_vector = obj.offsetRadiallyEncodeSMT(cached_variables, smt_file_path, radius, heading, debug=debug)
 			return cacheVarName(cached_variables, self, output_vector)
 
-		elif operator == 'distanceTo':
+		elif self.operator == 'distanceTo':
 			if debug:
 				writeSMTtoFile(smt_file_path, "distanceTo")
 
 			assert(isinstance(self.operands[0], Vector))
-			output = self.object.distanceToEncodeSMT(smt_file_path, cached_variables, vector = self.operands[0], debug=debug)
+			output = obj.distanceToEncodeSMT(smt_file_path, cached_variables, vector = self.operands[0], debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
-		elif operator == 'angleWith':
+		elif self.operator == 'angleWith':
 			if debug:
 				writeSMTtoFile(smt_file_path, "angleWith")
 
 			assert(isinstance(self.operands[0], Vector))
-			output_angle = self.object.angleWithEncodeSMT(smt_file_path, cached_variables, self.operands[0] ,debug=debug)
+			output_angle = obj.angleWithEncodeSMT(smt_file_path, cached_variables, self.operands[0] ,debug=debug)
 			return cacheVarName(cached_variables, self, output_angle)
 
-		elif operator == 'angleTo':
+		elif self.operator == 'angleTo':
 			if debug:
 				writeSMTtoFile(smt_file_path, "angleTo")
 
 			assert(isinstance(self.operands[0], Vector))
-			output_angle = self.object.angleToEncodeSMT(smt_file_path, cached_variables, self.operands[0] ,debug=debug)
+			output_angle = obj.angleToEncodeSMT(smt_file_path, cached_variables, self.operands[0] ,debug=debug)
 			return cacheVarName(cached_variables, self, output_angle)
 
-		elif operator == 'norm':
+		elif self.operator == 'norm':
 			if debug:
 				writeSMTtoFile(smt_file_path, "norm")
-			output = self.object.normEncodeSMT(smt_file_path, cached_variables, debug=debug)
+			output = obj.normEncodeSMT(smt_file_path, cached_variables, debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
-		elif operator == 'normalized':
+		elif self.operator == 'normalized':
 			if debug:
 				writeSMTtoFile(smt_file_path, "normalized")
-			output = self.object.normalizedEncodeSMT(smt_file_path, cached_variables,debug=debug)
+			output = obj.normalizedEncodeSMT(smt_file_path, cached_variables,debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
-		elif operator == '__add__' or '__radd__':
+		elif self.operator == '__add__' or '__radd__':
 			if debug:
 				writeSMTtoFile(smt_file_path, "add or radd")
-			output = self.object.addEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
+			output = obj.addEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
-		elif operator == '__sub__':
+		elif self.operator == '__sub__':
 			if debug:
 				writeSMTtoFile(smt_file_path, "subtract")
 
-			output = self.object.subEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
+			output = obj.subEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
-		elif operator == '__rsub__':
+		elif self.operator == '__rsub__':
 			if debug:
 				writeSMTtoFile(smt_file_path, "rsubtract")
-			output = self.object.rsubEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
+			output = obj.rsubEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
-		elif operator == '__mul__' or '__rmul__':
+		elif self.operator == '__mul__' or '__rmul__':
 			if debug:
 				writeSMTtoFile(smt_file_path, "multiply or rmultiply")
-			output = self.object.mulEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
+			output = obj.mulEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
-		elif operator == '__truediv__':
+		elif self.operator == '__truediv__':
 			if debug:
-				writeSMTtoFile(smt_file_path, "division")
-			output = self.object.truedivEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
+				writeSMTtoFile(smt_file_path, "__truediv__")
+			output = obj.truedivEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
-		elif operator == '__len__':
+		elif self.operator == '__len__':
 			if debug:
-				writeSMTtoFile(smt_file_path, "length")
-			output = self.object.lenEncodeSMT(smt_file_path, cached_variables, debug=debug)
+				writeSMTtoFile(smt_file_path, "__len__")
+			output = obj.lenEncodeSMT(smt_file_path, cached_variables, debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
-		elif operator == '__getitem__':
+		elif self.operator == '__getitem__':
 			if debug:
-				writeSMTtoFile(smt_file_path, "getitem")
-			output = self.object.subEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
+				writeSMTtoFile(smt_file_path, "__getitem__")
+			output = obj.subEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
-		elif operator == '__eq__':
+		elif self.operator == '__eq__':
 			if debug:
-				writeSMTtoFile(smt_file_path, "equal")
-			output = self.object.subEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
+				writeSMTtoFile(smt_file_path, "__eq__")
+			output = obj.subEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
 		else: 
@@ -354,7 +363,7 @@ class Vector(Samplable, collections.abc.Sequence):
 		if debug:
 			writeSMTtoFile(smt_file_path, "rotatedByEncodeToSMT()")
 
-		angle = checkAndEncodeSMT(smt_file_path, cached_variables, angle)
+		angle = checkAndEncodeSMT(smt_file_path, cached_variables, angle_obj)
 		x = checkAndEncodeSMT(smt_file_path, cached_variables, self.x)
 		y = checkAndEncodeSMT(smt_file_path, cached_variables, self.y)
 
@@ -552,7 +561,7 @@ class Vector(Samplable, collections.abc.Sequence):
 	def raddEncodeSMT(self, smt_file_path, cached_variables, other, debug=False):
 		if debug:
 			writeSMTtoFile(smt_file_path, "raddEncodeSMT")
-		return self.addEncodeSMT(self, smt_file_path, cached_variables, other, debug=False)
+		return self.addEncodeSMT(self, smt_file_path, cached_variables, other, debug=debug)
 
 	@vectorOperator
 	def __sub__(self, other) -> Vector:

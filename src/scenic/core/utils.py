@@ -11,7 +11,13 @@ def cached(oldMethod):
     storageName = f'_cached_{oldMethod.__name__}'
     @wrapt.decorator
     def wrapper(wrapped, instance, args, kwargs):
+        # print("storageName: ", storageName)
+        # print("wrapped: ", wrapped)
+        # print("instance: ", instance)
+        # print("args: ", args)
+        # print("kwargs: ", kwargs)
         self = args[0]
+       
         try:
             # Use __getattribute__ for direct lookup in case self is a Distribution
             return self.__getattribute__(storageName)

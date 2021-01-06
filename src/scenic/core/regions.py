@@ -13,7 +13,7 @@ from scenic.core.distributions import (Samplable, RejectionException, needsSampl
                                        distributionMethod, smt_add, smt_subtract, smt_multiply, 
                                        smt_divide, smt_and, smt_equal, smt_mod, smt_assert, findVariableName,
                                        checkAndEncodeSMT, writeSMTtoFile, cacheVarName, smt_lessThan, smt_lessThanEq,
-                                       smt_ite, normalizeAngle_SMT, smt_or, vector_operation_smt, Options, isNotConditioned,
+                                       smt_ite, normalizeAngle_SMT, smt_or, vector_operation_smt, Options, not isConditioned,
                                        Options, UniformDistribution)
 from scenic.core.lazy_eval import valueInContext
 from scenic.core.vectors import Vector, OrientedVector, VectorDistribution, VectorField, VectorOperatorDistribution
@@ -260,7 +260,7 @@ class PointInRegionDistribution(VectorDistribution):
 		self.region = region
 
 	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.region, Samplable) and isNotConditioned(self.region):
+		if isinstance(self.region, Samplable) and not isConditioned(self.region):
 			self.region.conditionforSMT(condition, conditioned_bool)
 		return None
 
@@ -279,14 +279,14 @@ class PointInRegionDistribution(VectorDistribution):
 			region = self.region
 
 		output_var = None
-		if isinstance(self._conditioned, Vector):
+		if isinstance(self._conditioned, tuple):
 			if debug:
 				writeSMTtoFile(smt_file_path, "PointInRegionDistribution is conditioned : " + str(self._conditioned))
 			vector = self._conditioned
 			output_var = (str(vector.x), str(vector.y))
 
 		elif isinstance(region, UniformDistribution):
-			possibleRegions = region._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
+			possibleRegions = region.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
 			if possibleRegions is None:
 				return None
 			x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
@@ -302,12 +302,12 @@ class PointInRegionDistribution(VectorDistribution):
 		elif isinstance(region, Options):
 			import scenic.domains.driving.roads as roads
 			if region._conditioned.checkOptionsType(roads.NetworkElement):
-				output_var = region._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+				output_var = region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 			else:
 				raise NotImplementedError
 
 		elif isinstance(region, Region):
-			output_var = region._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+			output_var = region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 		
 		else:
 			raise NotImplementedError
@@ -560,13 +560,13 @@ class SectorRegion(Region):
 		self.resolution = resolution
 
 	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.center, Samplable) and isNotConditioned(self.center):
+		if isinstance(self.center, Samplable) and not isConditioned(self.center):
 			self.center.conditionforSMT(condition, conditioned_bool)
-		if isinstance(self.radius, Samplable) and isNotConditioned(self.radius):
+		if isinstance(self.radius, Samplable) and not isConditioned(self.radius):
 			self.radius.conditionforSMT(condition, conditioned_bool)
-		if isinstance(self.heading, Samplable) and isNotConditioned(self.heading):
+		if isinstance(self.heading, Samplable) and not isConditioned(self.heading):
 			self.heading.conditionforSMT(condition, conditioned_bool)
-		if isinstance(self.angle, Samplable) and isNotConditioned(self.angle):
+		if isinstance(self.angle, Samplable) and not isConditioned(self.angle):
 			self.angle.conditionforSMT(condition, conditioned_bool)
 
 		return None
@@ -1365,7 +1365,7 @@ class IntersectionRegion(Region):
 
 	def conditionforSMT(self, condition, conditioned_bool):
 		for region in self.regions:
-			if isinstance(region, Samplable) and isNotConditioned(region):
+			if isinstance(region, Samplable) and not isConditioned(region):
 				region.conditionforSMT(condition, conditioned_bool)
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):

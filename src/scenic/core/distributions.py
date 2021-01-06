@@ -165,7 +165,7 @@ def findVariableName(smt_file_path, cached_variables, class_name, class_type=Non
 	if debug:
 		writeSMTtoFile(smt_file_path, "creating a variable "+var_name)
 
-	if class_type == None:
+	if class_type == None :
 		declare_var= "(declare-fun "+var_name+" () Real)"
 	else:
 		declare_var= "(declare-fun "+var_name+" () "+class_type+")"
@@ -180,11 +180,15 @@ def checkAndEncodeSMT(smt_file_path, cached_variables, obj, debug=False):
 	# saves the trouble of executing the same step, repeatedly
 	if obj in cached_variables.keys():
 		return cached_variables[obj]
-	elif isinstance(obj, Samplable):
-		return obj.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 	elif isinstance(obj, int) or isinstance(obj, float):
 		return str(obj)
 	elif isinstance(obj, str):
+		return obj
+	elif isinstance(obj._conditioned, Samplable):
+		return obj._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+	elif isinstance(obj._conditioned, int) or isinstance(obj._conditioned, float):
+		return str(obj)
+	elif isinstance(obj._conditioned, str):
 		# this covers case in regions.py, PointInRegionDist's encodeToSMT where
 		# a Vector is instantiated with string variable names
 		return obj
@@ -228,8 +232,8 @@ def cacheVarName(cached_variables, obj, var_names):
 	cached_variables[obj] = var_names
 	return var_names
 
-def isNotConditioned(obj):
-	return obj == obj._conditioned
+def isConditioned(obj):
+	return obj != obj._conditioned
 
 def resetConditionedVar(obj):
     obj._conditioned = obj
@@ -545,13 +549,13 @@ class FunctionDistribution(Distribution):
 
 	def conditionforSMT(self, condition, conditioned_bool):
 		for arg in self.arguments:
-			if isinstance(arg, Samplable) and isNotConditioned(arg):
+			if isinstance(arg, Samplable) and not isConditioned(arg):
 				arg.conditionforSMT(condition, conditioned_bool)
 		for kwarg in self.kwargs:
-			if isinstance(kwarg, Samplable) and isNotConditioned(kwarg):
+			if isinstance(kwarg, Samplable) and not isConditioned(kwarg):
 				kwarg.conditionforSMT(condition, conditioned_bool)
 		for support in self.support:
-			if isinstance(support, Samplable) and isNotConditioned(support):
+			if isinstance(support, Samplable) and not isConditioned(support):
 				support.conditionforSMT(condition, conditioned_bool)
 		return None
 
@@ -566,6 +570,9 @@ class FunctionDistribution(Distribution):
 		if debug:
 			writeSMTtoFile(smt_file_path, "FunctionDistribution")
 
+		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
+			return cacheVarName(cached_variables, self, self._conditioned)
+
 		if self in cached_variables.keys():
 			if debug:
 				writeSMTtoFile(smt_file_path, "FunctionDistribution already cached")
@@ -577,23 +584,23 @@ class FunctionDistribution(Distribution):
 		import scenic.domains.driving.roads as roads
 
 		if self.function == vectors.OrientedVector.make:
-			position = self.arguments[0]._conditioned
-			heading = self.arguments[1]._conditioned
+			position = self.arguments[0]
+			heading = self.arguments[1]
 			output = vectors.OrientedVector.makeEncodeSMT(smt_file_path, cached_variables, position, heading, debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
 		elif self.function == geometry.sin:
-			x = self.arguments[0]._conditioned
+			x = self.arguments[0]
 			output = geometry.sinEncodeSMT(smt_file_path, cached_variables, x, debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
 		elif self.function == geometry.cos:
-			x = self.arguments[0]._conditioned
+			x = self.arguments[0]
 			output = geometry.cosEncodeSMT(smt_file_path, cached_variables, x, debug=debug)
 			return cacheVarName(cached_variables, self, output)
 
 		elif self.function == geometry.normalizeAngle:
-			angle = checkAndEncodeSMT(smt_file_path, cached_variables, self.arguments[0]._conditioned, debug=debug)
+			angle = checkAndEncodeSMT(smt_file_path, cached_variables, self.arguments[0], debug=debug)
 			output = normalizeAngle_SMT(angle)
 			return cacheVarName(cached_variables, self, output)
 
@@ -695,6 +702,9 @@ class StarredDistribution(Distribution):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Class StarredDistribution encodeToSMT")
 
+		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
+			return cacheVarName(cached_variables, self, self._conditioned)
+
 		if self in cached_variables.keys():
 			if debug:
 				writeSMTtoFile(smt_file_path, "StarredDistribution already cached")
@@ -741,68 +751,80 @@ class MethodDistribution(Distribution):
 			# 	writeSMTtoFile(smt_file_path, "type(argument): "+str(type(arg)))
 			# writeSMTtoFile(smt_file_path, "self.kwargs: "+str(self.kwargs))
 
+		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
+			return cacheVarName(cached_variables, self, self._conditioned)
+
 		if self in set(cached_variables.keys()):
 			if debug:
 				writeSMTtoFile(smt_file_path, "MethodDistribution already exists in cached_variables dict")
 			return cached_variables[self]
-		
+
 		import scenic.domains.driving.roads as roads
+		obj = None
+		if isConditioned(self.object) and isinstance(self.object, Samplable):
+			obj = self.object._conditioned
+		elif isinstance(self.object, Options):
+			obj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
+		elif isinstance(self.object, roads.NetworkElement):
+			obj = self.object
+		else:
+			raise NotImplementedError
+		
+		output = None
 		if self.method == roads.Network.findPointIn:
 			assert(len(self.arguments)==2)
-			point = self.arguments[0]._conditioned
-			elems = self.arguments[1]._conditioned
-			output = self.object.findPointInEncodeSMT(smt_file_path, cached_variables, point, elems, debug=debug)
+			point = self.arguments[0]
+			elems = self.arguments[1]
+			output = obj.findPointInEncodeSMT(smt_file_path, cached_variables, point, elems, debug=debug)
 
 		elif self.method == roads.Network.elementAt:
 			assert(len(self.arguments)==1)
-			point = self.arguments[0]._conditioned
-			output = self.object.elementAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+			point = self.arguments[0]
+			output = obj.elementAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
 
 		elif self.method == roads.Network.roadAt:
 			assert(len(self.arguments)==1)
-			point = self.arguments[0]._conditioned
-			output = self.object.roadAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+			point = self.arguments[0]
+			output = obj.roadAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
 
 		elif self.method == roads.Network.laneAt:
 			assert(len(self.arguments)==1)
-			point = self.arguments[0]._conditioned
-			output = self.object.laneAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+			point = self.arguments[0]
+			output = obj.laneAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
 
 		elif self.method == roads.Network.laneSectionAtEncodeSMT:
 			assert(len(self.arguments)==1)
-			point = self.arguments[0]._conditioned
-			output = self.object.laneSectionAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+			point = self.arguments[0]
+			output = obj.laneSectionAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
 
 		elif self.method == roads.Network.laneGroupAt:
 			assert(len(self.arguments)==1)
-			point = self.arguments[0]._conditioned
-			output = self.object.laneGroupAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+			point = self.arguments[0]
+			output = obj.laneGroupAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
 
 		elif self.method == roads.Network.crossingAt:
 			assert(len(self.arguments)==1)
-			point = self.arguments[0]._conditioned
-			output = self.object.crossingAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+			point = self.arguments[0]
+			output = obj.crossingAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
 
 		elif self.method == roads.Network.intersectionAt:
 			assert(len(self.arguments)==1)
-			point = self.arguments[0]._conditioned
-			output = self.object.intersectionAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+			point = self.arguments[0]
+			output = obj.intersectionAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
 
 		else:
 			raise NotImplementedError
 
-		# create cached_variables[self]
-		output = self.object._conditioned.encodeToSMT(smt_file_path, cached_variables, self, debug=debug)
 		return cacheVarName(cached_variables, self, output)
 
 	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.object, Samplable) and isNotConditioned(self.object):
+		if isinstance(self.object, Samplable) and not isConditioned(self.object):
 			self.object.conditionforSMT(condition, conditioned_bool)
 		for arg in self.arguments:
-			if isinstance(arg, Samplable) and isNotConditioned(arg):
+			if isinstance(arg, Samplable) and not isConditioned(arg):
 				arg.conditionforSMT(condition, conditioned_bool)
 		for kwarg in self.kwargs:
-			if isinstance(kwarg, Samplable) and isNotConditioned(kwarg):
+			if isinstance(kwarg, Samplable) and not isConditioned(kwarg):
 				kwarg.conditionforSMT(condition, conditioned_bool)
 		return None
 
@@ -863,6 +885,9 @@ class AttributeDistribution(Distribution):
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Class AttributeDistribution encodeToSMT")
+
+		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
+			return cacheVarName(cached_variables, self, self._conditioned)
 		
 		if self in cached_variables.keys():
 			writeSMTtoFile(smt_file_path, "Class AttributeDistribution self in cached_variables")
@@ -872,47 +897,45 @@ class AttributeDistribution(Distribution):
 
 		if encode:
 			if isinstance(self.object, Point):
-				return getattr(self.object._conditioned, self.attribute)._conditioned.encodeToSMT(smt_file_path, 
+				return getattr(self.object._conditioned, self.attribute).encodeToSMT(smt_file_path, 
 										cached_variables, debug=debug)
 
 			elif isinstance(self.object, Options):
 				if self.object.checkOptionsType(roads.NetworkElement):
-					return self.object._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+					return self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 				else: 
 					raise NotImplementedError
 			elif isinstance(self.object, UniformDistribution):
-				return self.object._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+				return self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 			else:
 				if debug:
 					writeSMTtoFile("NEW CASE: ", type(self.object._conditioned))
 				raise NotImplementedError
 
 		else:
-			if isinstance(self.object._conditioned, Options):
-				if self.object._conditioned.checkOptionsType(roads.NetworkElement):
-					networkObj = self.object._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+			if isinstance(self.object, Options):
+				if self.object.checkOptionsType(roads.NetworkElement):
+					networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 					if networkObj is None :
 						return None
 
 					outputObjs = set()
 					for obj in networkObj :
-						outputObjs.add(getattr(self.object._conditioned, self.attribute).encodeToSMT(smt_file_path, cached_variables, 
-													debug=debug, encode=encode))
+						outputObjs.add(getattr(obj, self.attribute).encodeToSMT(smt_file_path, cached_variables, debug=debug))
 					return outputObjs
 				else: 
 					raise NotImplementedError
-			elif isinstance(self.object._conditioned, UniformDistribution):
-				networkObj = self.object._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+			elif isinstance(self.object, UniformDistribution):
+				networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 				if networkObj is None:
 					return None
 				outputObjs = set()
 				for obj in networkObj:
-					outputObjs.add(getattr(self.object._conditioned, self.attribute).encodeToSMT(smt_file_path, cached_variables, 
-												debug=debug, encode=encode))
+					outputObjs.add(getattr(obj, self.attribute).encodeToSMT(smt_file_path, cached_variables, debug=debug))
 				return outputObjs
 			else:
 				if debug:
-					writeSMTtoFile("NEW CASE: ", type(self.object._conditioned))
+					writeSMTtoFile("NEW CASE: ", type(self.object))
 				raise NotImplementedError
 
 		return None
@@ -966,10 +989,10 @@ class OperatorDistribution(Distribution):
 		self.operands = operands
 
 	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.object._conditioned, Samplable) and isNotConditioned(self.object._conditioned):
+		if isinstance(self.object._conditioned, Samplable) and not isConditioned(self.object._conditioned):
 			self.object._conditioned.conditionforSMT(condition, conditioned_bool)
 		for op in self.operands:
-			if isinstance(op._conditioned, Samplable) and isNotConditioned(op._conditioned):
+			if isinstance(op._conditioned, Samplable) and not isConditioned(op._conditioned):
 				op._conditioned.conditionforSMT(condition, conditioned_bool)
 		return None
 
@@ -988,53 +1011,57 @@ class OperatorDistribution(Distribution):
 			for op in self.operands:
 				writeSMTtoFile(smt_file_path, "type(operand): "+str(type(op._conditioned)))
 
+		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
+			return cacheVarName(cached_variables, self, self._conditioned)
+
 		if self in cached_variables.keys():
 			if debug:
 				writeSMTtoFile(smt_file_path, "OperatorDistribution already exists in cached_variables dict")
 			return cached_variables[self]
 
-		var_name = self.object._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+		obj_var = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 
 		assert(len(self.operands) < 2)
-		operand = self.operands[0]._conditioned
-		operand = checkAndEncodeSMT(smt_file_path, cached_variables, operand, debug=debug)
+		operand = self.operands[0]
+		operand_smt = checkAndEncodeSMT(smt_file_path, cached_variables, operand, debug=debug)
+		output = None 
 
 		if self.operator in ['__add__', '__radd__' , '__sub__', '__rsub__', '__truediv__', '__rtruediv__', '__mul__', '__rmul__',\
 			'__floordiv__', '__rfloordiv__','__mod__', '__rmod__','__divmod__', '__rdivmod__','__pow__', '__rpow__']:
 
-			var_name = findVariableName(smt_file_path, cached_variables, 'opdist', debug=debug)
+			output = findVariableName(smt_file_path, cached_variables, 'opdist', debug=debug)
 
 			if self.operator == '__add__' or self.operator == '__radd__':
-				summation = smt_add(cached_variables[self.object._conditioned], operand_smt)
-				smt_encoding = smt_assert("equal", var_name, summation)
+				summation = smt_add(obj_var, operand_smt)
+				smt_encoding = smt_assert("equal", output, summation)
 
 			elif self.operator == '__mul__' or self.operator == '__rmul__':
-				multiplication = smt_multiply(cached_variables[self.object._conditioned], operand_smt)
-				smt_encoding = smt_assert("equal", var_name, multiplication)
+				multiplication = smt_multiply(obj_var, operand_smt)
+				smt_encoding = smt_assert("equal", output, multiplication)
 
 			elif self.operator == '__sub__':
-				subtraction = smt_subtract(cached_variables[self.object._conditioned], operand_smt)
-				smt_encoding = smt_assert("equal", var_name, subtraction)
+				subtraction = smt_subtract(obj_var, operand_smt)
+				smt_encoding = smt_assert("equal", output, subtraction)
 
 			elif self.operator == '__rsub__':
-				subtraction = smt_subtract(cached_variables[self.operands[0]._conditioned], operand_smt)
-				smt_encoding = smt_assert("equal", var_name, subtraction)
+				subtraction = smt_subtract(operand_smt, obj_var)
+				smt_encoding = smt_assert("equal", output, subtraction)
 
 			elif self.operator == '__truediv__':
-				truediv = smt_divide(cached_variables[self.object._conditioned], operand_smt)
-				smt_encoding = smt_assert("equal", var_name, truediv)
+				truediv = smt_divide(obj_var, operand_smt)
+				smt_encoding = smt_assert("equal", output, truediv)
 
 			elif self.operator == '__rtruediv__':
-				division = smt_divide(cached_variables[self.operands[0]._conditioned], operand_smt)
-				smt_encoding = smt_assert("equal", var_name, division)
+				division = smt_divide(operand_smt, obj_var)
+				smt_encoding = smt_assert("equal", output, division)
 
 			elif self.operator == '__mod__':
-				modular = smt_mod(cached_variables[self.object._conditioned], operand_smt)
-				smt_encoding = smt_assert("equal", var_name, modular)
+				modular = smt_mod(obj_var, operand_smt)
+				smt_encoding = smt_assert("equal", output, modular)
 
 			elif self.operator == '__rmod__':
-				modular = smt_mod(cached_variables[self.operands[0]._conditioned], operand_smt)
-				smt_encoding = smt_assert("equal", var_name, modular)
+				modular = smt_mod(operand_smt, obj_var)
+				smt_encoding = smt_assert("equal", output, modular)
 
 			else:# TODO: floordiv, rfloordiv, divmod, rdivmod, pow, rpow
 				raise NotImplementedError
@@ -1045,11 +1072,10 @@ class OperatorDistribution(Distribution):
 			raise NotImplementedError
 		else:
 			if debug:
-				print("self.operator: ", self.operator)
 				writeSMTtoFile(smt_file_path, "self.operator: " + str(self.operator))
 			raise NotImplementedError
 
-		return cacheVarName(cached_variables, self, var_name)
+		return cacheVarName(cached_variables, self, output)
 
 	@staticmethod
 	def inferType(obj, operator):
@@ -1174,9 +1200,9 @@ class Range(Distribution):
 		self.high = high
 
 	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.low, Samplable) and isNotConditioned(self.low):
+		if isinstance(self.low, Samplable) and not isConditioned(self.low):
 			self.low.conditionforSMT(condition, conditioned_bool)
-		if isinstance(self.high, Samplable) and isNotConditioned(self.high):
+		if isinstance(self.high, Samplable) and not isConditioned(self.high):
 			self.high.conditionforSMT(condition, conditioned_bool)
 		return None
 
@@ -1188,6 +1214,9 @@ class Range(Distribution):
 		"""
 		if debug:
 			writeSMTtoFile(smt_file_path, "Range")
+
+		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
+			return cacheVarName(cached_variables, self, self._conditioned)
 		
 		if self in cached_variables.keys():
 			if debug:
@@ -1252,9 +1281,9 @@ class Normal(Distribution):
 		self.stddev = stddev
 
 	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.mean, Samplable) and isNotConditioned(self.mean):
+		if isinstance(self.mean, Samplable) and not isConditioned(self.mean):
 			self.mean.conditionforSMT(condition, conditioned_bool)
-		if isinstance(self.stddev, Samplable) and isNotConditioned(self.stddev):
+		if isinstance(self.stddev, Samplable) and not isConditioned(self.stddev):
 			self.stddev.conditionforSMT(condition, conditioned_bool)
 		return None
 
@@ -1264,6 +1293,9 @@ class Normal(Distribution):
 		"""
 		if debug:
 			writeSMTtoFile(smt_file_path, "Normal")
+
+		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
+			return cacheVarName(cached_variables, self, self._conditioned)
 		
 		if self in cached_variables.keys():
 			if debug:
@@ -1350,9 +1382,9 @@ class TruncatedNormal(Normal):
 		self.high = high
 
 	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.low, Samplable) and isNotConditioned(self.low):
+		if isinstance(self.low, Samplable) and not isConditioned(self.low):
 			self.low.conditionforSMT(condition, conditioned_bool)
-		if isinstance(self.high, Samplable) and isNotConditioned(self.high):
+		if isinstance(self.high, Samplable) and not isConditioned(self.high):
 			self.high.conditionforSMT(condition, conditioned_bool)
 		return None
 
@@ -1363,6 +1395,9 @@ class TruncatedNormal(Normal):
 
 		if debug:
 			writeSMTtoFile(smt_file_path, "TruncatedNormal")
+
+		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
+			return cacheVarName(cached_variables, self, self._conditioned)
 		
 		if self in cached_variables.keys():
 			if debug:
@@ -1463,9 +1498,9 @@ class DiscreteRange(Distribution):
 		self.options = tuple(range(low, high+1))
 
 	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.low, Samplable) and isNotConditioned(self.low):
+		if isinstance(self.low, Samplable) and not isConditioned(self.low):
 			self.low.conditionforSMT(condition, conditioned_bool)
-		if isinstance(self.high, Samplable) and isNotConditioned(self.high):
+		if isinstance(self.high, Samplable) and not isConditioned(self.high):
 			self.high.conditionforSMT(condition, conditioned_bool)
 		return None
 
@@ -1475,6 +1510,9 @@ class DiscreteRange(Distribution):
 		"""
 		if debug:
 			writeSMTtoFile(smt_file_path, "DiscreteRange")
+
+		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
+			return cacheVarName(cached_variables, self, self._conditioned)
 
 		if self in cached_variables.keys():
 			if debug:
@@ -1565,16 +1603,16 @@ class Options(MultiplexerDistribution):
 		if encode:
 			if self.checkOptionsType(roads.NetworkElement):
 				valid_elems = []
-				if self is self._conditioned:
+				if not isConditioned(self):
 					for opt in options:
 						if opt.polygon.contains(shapely.geometry.Point(cached_variables['current_obj_pos'])):
 							valid_elems.append(opt)
 
 					if len(valid_elems) == 0:
 						return None
-					self._conditioned = Options(valid_elems)
+					self._conditioned = valid_elems
 				else:
-					valid_elems = self._conditioned.options
+					valid_elems = options
 
 				x = findVariableName(smt_file_path, cached_variables, "x", debug=debug)
 				y = findVariableName(smt_file_path, cached_variables, "y", debug=debug)
@@ -1604,7 +1642,7 @@ class Options(MultiplexerDistribution):
 						cumulative_smt_encoding = smt_or(smt_encoding, cumulative_smt_encoding)
 					count += 1
 
-				cumulative_smt_encoding = smt_assert("equal", variable, cumulative_smt_encoding)
+				cumulative_smt_encoding = smt_assert(None, cumulative_smt_encoding)
 				writeSMTtoFile(smt_file_path, cumulative_smt_encoding)
 				return variable
 
@@ -1613,16 +1651,17 @@ class Options(MultiplexerDistribution):
 
 		else:
 			if self.checkOptionsType(roads.NetworkElement):
-				valid_elems = set()
-				if self is self._conditioned:
+				valid_elems = None
+				if not isConditioned(self):
+					valid_elems = []
 					for opt in options:
 						if opt.polygon.contains(shapely.geometry.Point(cached_variables['current_obj_pos'])):
-							valid_elems.add(opt)
+							valid_elems.append(opt)
 
 					if len(valid_elems) == 0:
 						return None
 
-					self._conditioned = Option(valid_elems)
+					self._conditioned = valid_elems
 				else:
 					valid_elems = self._conditioned.options
 
@@ -1720,7 +1759,7 @@ class UniformDistribution(Distribution):
 		if debug:
 			writeSMTtoFile(smt_file_path, "class UniformDistribution encodeToSMT")
 		
-		if self in cached_variables.keys():
+		if self in set(cached_variables.keys()):
 			if debug:
 				writeSMTtoFile(smt_file_path, "UniformDistribution already cached")
 			return cached_variables[self]
@@ -1731,7 +1770,7 @@ class UniformDistribution(Distribution):
 
 		import scenic.domains.driving.roads as roads
 		if checkOptionsType(roads.NetworkElement):
-			return opt.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+			return self.options[0].encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
 		else:
 			raise NotImplementedError
 

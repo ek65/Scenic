@@ -6,7 +6,7 @@ import numbers
 import typing
 
 from scenic.core.distributions import (Distribution, RejectionException, StarredDistribution,
-                                       distributionFunction)
+                                       distributionFunction, writeSMTtoFile)
 from scenic.core.lazy_eval import (DelayedArgument, valueInContext, requiredProperties,
                                    needsLazyEvaluation, toDelayedArgument)
 from scenic.core.vectors import Vector

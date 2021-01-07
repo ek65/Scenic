@@ -233,7 +233,7 @@ def cacheVarName(cached_variables, obj, var_names):
 	return var_names
 
 def isConditioned(obj):
-	return obj != obj._conditioned
+	return obj is not obj._conditioned
 
 def resetConditionedVar(obj):
     obj._conditioned = obj
@@ -1594,9 +1594,6 @@ class Options(MultiplexerDistribution):
 		if self in cached_variables.keys():
 			return cached_variables[self]
 
-		options = self._conditioned.options
-		assert(len(options) > 0)
-
 		import scenic.domains.driving.roads as roads
 		import shapely.geometry
 
@@ -1604,15 +1601,16 @@ class Options(MultiplexerDistribution):
 			if self.checkOptionsType(roads.NetworkElement):
 				valid_elems = []
 				if not isConditioned(self):
-					for opt in options:
+					for opt in self.options:
 						if opt.polygon.contains(shapely.geometry.Point(cached_variables['current_obj_pos'])):
 							valid_elems.append(opt)
 
 					if len(valid_elems) == 0:
+						writeSMTtoFile(smt_file_path, "len(valid_elems)==0")
 						return None
 					self._conditioned = valid_elems
 				else:
-					valid_elems = options
+					valid_elems = self._conditioned
 
 				x = findVariableName(smt_file_path, cached_variables, "x", debug=debug)
 				y = findVariableName(smt_file_path, cached_variables, "y", debug=debug)
@@ -1634,7 +1632,7 @@ class Options(MultiplexerDistribution):
 				variable = findVariableName(smt_file_path, cached_variables, "var", debug=debug)
 				cumulative_smt_encoding = None
 				count = 0
-				for opt in options:
+				for opt in self.options:
 					smt_encoding = smt_equal(variable, str(opt))
 					if count == 0:
 						cumulative_smt_encoding = smt_encoding
@@ -1654,7 +1652,7 @@ class Options(MultiplexerDistribution):
 				valid_elems = None
 				if not isConditioned(self):
 					valid_elems = []
-					for opt in options:
+					for opt in self.options:
 						if opt.polygon.contains(shapely.geometry.Point(cached_variables['current_obj_pos'])):
 							valid_elems.append(opt)
 
@@ -1663,7 +1661,7 @@ class Options(MultiplexerDistribution):
 
 					self._conditioned = valid_elems
 				else:
-					valid_elems = self._conditioned.options
+					valid_elems = self._conditioned
 
 				return valid_elems
 			else:

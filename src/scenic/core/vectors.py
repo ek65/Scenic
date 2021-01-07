@@ -14,7 +14,7 @@ import wrapt
 from scenic.core.distributions import (Samplable, Distribution, MethodDistribution,
     needsSampling, makeOperatorHandler, distributionMethod, distributionFunction,
 	RejectionException, smt_add, smt_subtract, smt_multiply, smt_divide, smt_and, 
-	smt_equal, smt_mod, smt_assert, findVariableName,not isConditioned,
+	smt_equal, smt_mod, smt_assert, findVariableName, isConditioned,
 	checkAndEncodeSMT, writeSMTtoFile, cacheVarName, smt_lessThan, smt_lessThanEq, smt_ite, normalizeAngle_SMT, vector_operation_smt)
 from scenic.core.lazy_eval import valueInContext, needsLazyEvaluation, makeDelayedFunctionCall
 import scenic.core.utils as utils
@@ -759,7 +759,7 @@ class OrientedVector(Vector):
 	def toHeading(self):
 		return self.heading
 
-	def toHeadingEncodeSMT(self, smt_file_path, cached_variables, debug=debug):
+	def toHeadingEncodeSMT(self, smt_file_path, cached_variables, debug=False):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Class OrientedVector toHeadingEncodeSMT")
 

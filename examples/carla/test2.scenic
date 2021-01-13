@@ -11,6 +11,6 @@ model scenic.simulators.carla.model #located in scenic/simulators/carla/model.sc
 laneSecsWithLeftLane = filter(lambda i: i._laneToLeft != None, network.laneSections)
 laneSec = Uniform(*laneSecsWithLeftLane)
 spot = OrientedPoint on laneSec
-ego = Car left of spot by Range(2, 4)
+ego = Car ahead of spot by Range(2, 4)
 
 # tests: VectorOperatorDistribution, OperatorDistribution, Range, Options of LaneSections

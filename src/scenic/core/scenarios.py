@@ -3,7 +3,7 @@
 import random
 import time
 
-from scenic.core.distributions import Samplable, RejectionException, needsSampling
+from scenic.core.distributions import Samplable, RejectionException, needsSampling, Options
 from scenic.core.lazy_eval import needsLazyEvaluation
 from scenic.core.external_params import ExternalSampler
 from scenic.core.regions import EmptyRegion
@@ -11,8 +11,7 @@ from scenic.core.workspaces import Workspace
 from scenic.core.vectors import Vector
 from scenic.core.utils import areEquivalent
 from scenic.core.errors import InvalidScenarioError
-from scenic.core.dynamics import Behavior
-from scenic.core.requirements import BoundRequirement
+import scenic.syntax.veneer as veneer
 
 class Scene:
 	"""Scene()
@@ -207,7 +206,7 @@ class Scenario:
 				sampledObj.heading = float(sampledObj.heading)
 				# behavior
 				behavior = sampledObj.behavior
-				if behavior is not None and not isinstance(behavior, Behavior):
+				if behavior is not None and not isinstance(behavior, veneer.Behavior):
 					raise InvalidScenarioError(
 						f'behavior {behavior} of Object {obj} is not a behavior')
 
@@ -250,10 +249,10 @@ class Scenario:
 		for modName, namespace in self.behaviorNamespaces.items():
 			sampledNamespace = { name: sample[value] for name, value in namespace.items() }
 			sampledNamespaces[modName] = (namespace, sampledNamespace, namespace.copy())
-		alwaysReqs = (BoundRequirement(req, sample) for req in self.alwaysRequirements)
-		terminationConds = (BoundRequirement(req, sample)
+		alwaysReqs = (veneer.BoundRequirement(req, sample) for req in self.alwaysRequirements)
+		terminationConds = (veneer.BoundRequirement(req, sample)
 							for req in self.terminationConditions)
-		termSimulationConds = (BoundRequirement(req, sample)
+		termSimulationConds = (veneer.BoundRequirement(req, sample)
 							   for req in self.terminateSimulationConditions)
 		scene = Scene(self.workspace, sampledObjects, ego, sampledParams,
 					  alwaysReqs, terminationConds, termSimulationConds, self.monitors,
@@ -270,5 +269,212 @@ class Scenario:
 	def getSimulator(self):
 		if self.simulator is None:
 			raise RuntimeError('scenario does not specify a simulator')
-		import scenic.syntax.veneer as veneer
-		return veneer.instantiateSimulator(self.simulator, self.params)
+		try:
+			assert not veneer._globalParameters		# TODO improve hack!
+			veneer._globalParameters = dict(self.params)
+			return self.simulator()
+		finally:
+			veneer._globalParameters = {}
+
+	# a function to traverse the expression tree
+	def traverse(self, obj, depList, featureList):
+	    # Input: type(depList) := set
+	    depList.add(obj)
+	    if (obj._dependencies is None) or (obj in featureList):
+	        return depList
+	    for dep in obj._dependencies:
+	        if isinstance(dep._conditioned, Samplable):
+	            depList = self.traverse(dep, depList, featureList)
+	    return depList
+
+	def conditionPosForDepAnalysis(self, obj, depth=0):
+	    """Limitation: Technically, Options of network element is also an intermediate variable
+	    However, we are optimizing here to avoid having too many objs sharing the same intermediate var
+	    to prevent joint smt translation"""
+	    
+	    if depth==0:
+	        obj._conditionTo(0.0)
+	    
+	    if (obj._dependencies is None):
+	        return None
+
+	    from scenic.domains.driving.roads import NetworkElement
+	    if isinstance(obj._conditioned, Options) and isinstance(obj.options[0], NetworkElement):
+	#         print("obj to be conditioned: ",obj._conditioned)
+	        obj.conditionTo(0.0)
+	        return None
+	    
+	    for dep in obj._dependencies:
+	        if isinstance(dep._conditioned, Samplable):
+	            self.conditionPosForDepAnalysis(dep, depth+1) 
+	    return None
+
+	def resetConditionedVar(self, obj):
+	    obj._conditioned = obj
+	    if (obj._dependencies is None):
+	        return None
+	    
+	    for dep in obj._dependencies:
+	        self.resetConditionedVar(dep)
+	    return None
+
+	def resetConditionedObj(self):
+	    for obj in self.objects:
+	        self.resetConditionedVar(obj.position)
+	        self.resetConditionedVar(obj.heading)
+
+	def extractObjDependencies(self, objDep):
+	    # Input: type(objDep) := dictionary
+	    # Output: objDep := key: obj, value: not feature dependent dependencies
+	    # this non-feature dependence is to analyze for intermediate var dependence analysis
+	    
+	    featureList = set()
+	    for obj in self.objects:
+	        posDep = set()
+	        headingDep = set()
+	        objDep[obj] = {}
+
+	        # TODO: need to generalize following conditions to all attributes
+	        objDep[obj]['position'] = self.traverse(obj.position, posDep, featureList)
+	        featureList.add(obj.position)
+	        self.conditionPosForDepAnalysis(obj.position)
+
+	        objDep[obj]['heading'] = self.traverse(obj.heading, headingDep, featureList)
+	        featureList.add(obj.heading)
+	        obj.heading.conditionTo(0.0)
+	    return objDep
+
+	def findObjByValue(self, dictionary, value):
+	    for key in dictionary.keys():
+	        if value in dictionary[key]:
+	            return key
+	    return None
+
+	def analyzeDependencies(self, objDep, debug=False):
+	    objects = self.objects
+	    feature_list = set()
+	    obj_feature_dict = {}
+	    
+	    count = 0
+	    for obj in objects:
+	        objDep[obj]['dependent_objs'] = set()
+	        objDep[obj]['jointly_dependent'] = set()
+	        objDep[obj]['self'] = 'obj'+str(count)
+	        objDep['obj'+str(count)] = obj
+	        objDep[obj]['dependent_objs_str'] = set()
+	        objDep[obj]['jointly_dependent_str'] = set()
+	        
+	        # TODO: generalize to add any features of users interest
+	        feature_list.update([obj.position, obj.heading])
+	        obj_feature_dict[obj] = set([obj.position, obj.heading])
+	        count+=1
+	    
+	    for i in range(len(objects)):
+	        for j in range(len(objects)-(i+1)):
+	            obj1 = objects[i]
+	            obj2 = objects[j+i+1]
+	            obj1_str = 'obj'+str(i)
+	            obj2_str = 'obj'+str(j+i+1)
+	            obj1_index = i
+	            obj2_index = j+i+1
+	            
+	            obj1_pos = objDep[obj1]['position']
+	            obj2_pos = objDep[obj2]['position']
+	            
+	            intersection_elem = obj1_pos.intersection(obj2_pos)
+	            
+	            if len(intersection_elem) >= 1:
+	                # TODO: need to generalize following conditions to all attributes
+	                if ((obj1.position in intersection_elem) and not (obj1.position is obj2.position)) \
+	                    or ((obj1.heading in intersection_elem) and not (obj1.heading is obj2.heading)):
+	                    objDep[obj2]['dependent_objs'].add(obj1)
+	                    if debug:
+	                        objDep[obj2]['dependent_objs_str'].add(objDep[obj1]['self'])
+	                elif ((obj2.position in intersection_elem) and not (obj2.position is obj1.position))\
+	                    or ((obj2.heading in intersection_elem) and not (obj2.heading is obj1.heading)):
+	                    objDep[obj1]['dependent_objs'].add(obj2)
+	                    if debug:
+	                        objDep[obj1]['dependent_objs_str'].add(objDep[obj2]['self'])
+	                elif len(feature_list.intersection(intersection_elem))==len(intersection_elem):
+	                    for feature in feature_list.intersection(intersection_elem):
+	                        if not (feature in obj_feature_dict[obj1]):
+	                            objToAdd = self.findObjByValue(obj_feature_dict, feature)
+	                            objDep[obj1]['dependent_objs'].add(objToAdd)
+	                            if debug:
+	                                objDep[obj1]['dependent_objs_str'].add(objDep[objToAdd]['self'])
+	                        if not (feature in obj_feature_dict[obj2]):
+	                            objToAdd = self.findObjByValue(obj_feature_dict, feature)
+	                            objDep[obj2]['dependent_objs'].add(objToAdd)
+	                            if debug:
+	                                objDep[obj2]['dependent_objs_str'].add(objDep[objToAdd]['self'])
+	                else:
+	                    objDep[obj1]['jointly_dependent'].add(obj2)
+	                    objDep[obj2]['jointly_dependent'].add(obj1)
+	                    if debug:
+	                        objDep[obj1]['jointly_dependent_str'].add(objDep[obj2]['self'])
+	                        objDep[obj2]['jointly_dependent_str'].add(objDep[obj1]['self'])
+	    return objDep
+	            
+	    
+	def findObj(self, output_list, obj, objDep, debug = False):
+	    # returns the index where the obj is located in output_list
+	    index = 0
+	    if debug:
+	        obj = objDep[obj]['self']
+	    for elem in output_list:
+	        if obj in elem:
+	            return index
+	        index += 1
+	    return None
+	        
+	    
+	def computeObjsDependencyOrder(self, objDep, debug = False):
+	    objects = self.objects
+	    output = []
+	    count = 0
+	    for obj in objects:
+	        if debug:
+	            jointlyDependentObj = objDep[obj]['jointly_dependent_str']
+	        else:
+	            jointlyDependentObj = objDep[obj]['jointly_dependent']
+	        index = self.findObj(output, obj, objDep, debug)
+	        if index == None:
+	            jointObjs = set()
+	            output.append(jointObjs)
+	        else:
+	            jointObjs = output[index]
+	        
+	        if debug:
+	            jointObjs.add(objDep[obj]['self'])
+	        else:
+	            jointObjs.add(obj)
+	        
+	        if len(jointlyDependentObj) != len(jointObjs.intersection(jointlyDependentObj)):
+	            for elem in jointlyDependentObj:
+	                if elem not in jointObjs:
+	                    jointObjs.add(elem)
+	        count += 1
+	        
+	    # shuffle the output to abide by the dependency relation
+	    count = 0
+	    for obj in objects:
+	        obj_index = self.findObj(output, obj, objDep, debug)
+	        if debug:
+	            dependentObj = objDep[obj]['dependent_objs_str']
+	            print("obj : ", objDep[obj]['self'])
+	        else:
+	            dependentObj = objDep[obj]['dependent_objs']
+	        
+	        for elem in dependentObj:
+	            if debug:
+	                dep_index = self.findObj(output, objDep[elem], objDep, debug)
+	                print("elem: ", elem)
+	                print("output: ", output)
+	            else:
+	                dep_index = self.findObj(output, obj, objDep, debug)
+	            
+	            if dep_index > obj_index:
+	                insert_index = 0 if obj_index == 0 else obj_index-1
+	                output.insert(insert_index, output.pop(dep_index))
+	        count += 1
+	    return output

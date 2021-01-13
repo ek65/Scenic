@@ -293,7 +293,7 @@ class PointInRegionDistribution(VectorDistribution):
 			y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 			output_var = (x,y)
 
-			for reg in possibleRegions:
+			for reg in possibleRegions.options: # UniformDist encodeToSMT outputs Options class
 				point = reg.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 				smt_encoding = vector_operation_smt(output_var, "equal", point)
 				smt_encoding = smt_assert(None, smt_encoding)

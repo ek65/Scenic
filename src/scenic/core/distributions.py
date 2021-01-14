@@ -1090,7 +1090,13 @@ class OperatorDistribution(Distribution):
 					writeSMTtoFile(smt_file_path, "OperatorDistribution self.operator == __getitem__")
 
 				options = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
-				for opt in options:
+				# all 'encode=False' flag outputs Options class 
+
+				if debug:
+					writeSMTtoFile(smt_file_path, "options: " +str(options))
+
+				import scenic.core.vectors as vectors
+				for opt in options.options:
 					var = opt.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 					smt_encoding = smt_assert("equal", output, var)
 					writeSMTtoFile(smt_file_path, smt_encoding)
@@ -1102,6 +1108,12 @@ class OperatorDistribution(Distribution):
 			raise NotImplementedError
 
 		return cacheVarName(cached_variables, self, output)
+
+	# def encodeHeading(self, element):
+	# 	if len(element.centerline.points) == 2:
+	# 		point = element.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+
+
 
 	@staticmethod
 	def inferType(obj, operator):
@@ -1627,14 +1639,17 @@ class Options(MultiplexerDistribution):
 			if self.checkOptionsType(roads.NetworkElement):
 				valid_options = []
 				if not isConditioned(self):
+					current_obj_pos = shapely.geometry.Point(cached_variables['current_obj_pos'])
 					for opt in self.options:
-						if opt.polygon.contains(shapely.geometry.Point(cached_variables['current_obj_pos'])):
+						if (opt.polygon.contains(current_obj_pos)) or (opt.polygon.distance(current_obj_pos) <= 3):
+							# TODO: replace this if statement with contains() in roads.py 
+							# for unknown reason, "tolerance" attribute cannot be added
 							valid_options.append(opt)
-
 					if len(valid_options) == 0:
 						writeSMTtoFile(smt_file_path, "len(valid_options)==0")
 						return None
 					self._conditioned = Options(valid_options)
+					valid_options = self._conditioned
 				else:
 					valid_options = self._conditioned
 

@@ -276,6 +276,9 @@ class LinearElement(NetworkElement):
     _successor: Union[NetworkElement, None] = None   # going forward
     _predecessor: Union[NetworkElement, None] = None # going backward
 
+    # tolerance for determining whether a point is contained in a class object's polygon region
+    tolerance: 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
+
     @property
     def successor(self):
         return _rejectIfNonexistent(self._successor, 'successor')
@@ -303,6 +306,7 @@ class LinearElement(NetworkElement):
 
         :meta private:
         """
+
         point = _toVector(point)
         start, end = self.centerline.nearestSegmentTo(point)
         return start.angleTo(end)
@@ -374,6 +378,9 @@ class Road(LinearElement):
 
     crossings: Tuple[PedestrianCrossing] = ()    # ordered from start to end
 
+    # tolerance for determining whether a point is contained in a class object's polygon region
+    tolerance: 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
+
     def encodeToSMT(self, smt_file_path, cached_variables, debug = False):
         if debug:
             writeSMTtoFile(smt_file_path, "Class Road encodeToSMT")
@@ -381,6 +388,11 @@ class Road(LinearElement):
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
         return polygonalRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+
+    def contains(self, smt_file_path, cached_variables, shapely_point ,debug = False):
+        if self.polygon.contains(shapely_point) or self.polygon.distance(shapely_point) <= self.tolerance:
+            return True
+        return False
 
     def __attrs_post_init__(self):
         super().__attrs_post_init__()
@@ -560,6 +572,9 @@ class Lane(_ContainsCenterline, LinearElement):
 
     maneuvers: Tuple[Maneuver] = ()     # possible maneuvers upon reaching the end of this lane
 
+    # tolerance for determining whether a point is contained in a class object's polygon region
+    tolerance: 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
+
     def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "roads.py Lane Class")
@@ -567,6 +582,11 @@ class Lane(_ContainsCenterline, LinearElement):
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
         return polygonalRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+
+    def contains(self, smt_file_path, cached_variables, shapely_point ,debug = False):
+        if self.polygon.contains(shapely_point) or self.polygon.distance(shapely_point) <= self.tolerance:
+            return True
+        return False
 
     @distributionFunction
     def sectionAt(self, point: Vectorlike, reject=False) -> Union[LaneSection, None]:
@@ -599,8 +619,10 @@ class RoadSection(LinearElement):
     lanes: Tuple[LaneSection] = ()   # in order, with lane 0 being the rightmost
     forwardLanes: Tuple[LaneSection] = ()   # as above
     backwardLanes: Tuple[LaneSection] = ()  # as above
-
     lanesByOpenDriveID: Dict[LaneSection]
+
+    # tolerance for determining whether a point is contained in a class object's polygon region
+    tolerance: 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
 
     def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
         if debug:
@@ -609,6 +631,11 @@ class RoadSection(LinearElement):
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
         return polygonalRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+
+    def contains(self, smt_file_path, cached_variables, shapely_point ,debug = False):
+        if self.polygon.contains(shapely_point) or self.polygon.distance(shapely_point) <= self.tolerance:
+            return True
+        return False
 
     def __attrs_post_init__(self):
         super().__attrs_post_init__()
@@ -692,6 +719,9 @@ class LaneSection(_ContainsCenterline, LinearElement):
     #: Slower adjacent lane of same type, if any.
     _slowerLane: Union[LaneSection, None] = None
 
+    # tolerance for determining whether a point is contained in a class object's polygon region
+    tolerance: float = 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
+
     def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "roads.py Class LaneSection encodeToSMT")
@@ -699,6 +729,11 @@ class LaneSection(_ContainsCenterline, LinearElement):
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
         return polygonalRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+
+    def contains(self, smt_file_path, cached_variables, shapely_point, debug = False):
+        if self.polygon.contains(shapely_point) or self.polygon.distance(shapely_point) <= self.tolerance:
+            return True
+        return False
 
     @property
     def laneToLeft(self) -> LaneSection:
@@ -742,6 +777,21 @@ class Sidewalk(_ContainsCenterline, LinearElement):
     """
     road: Road
     crossings: Tuple[PedestrianCrossing]
+    # tolerance for determining whether a point is contained in a class object's polygon region
+    tolerance: float = 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
+
+    def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+        if debug:
+            writeSMTtoFile(smt_file_path, "roads.py Class Sidewalk encodeToSMT")
+
+        shapely_polygon = self.polygon
+        polygonalRegion = regionFromShapelyObject(shapely_polygon)
+        return polygonalRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+
+    def contains(self, smt_file_path, cached_variables, shapely_point ,debug = False):
+        if self.polygon.contains(shapely_point) or self.polygon.distance(shapely_point) <= self.tolerance:
+            return True
+        return False
 
 @attr.s(auto_attribs=True, kw_only=True, repr=False)
 class PedestrianCrossing(_ContainsCenterline, LinearElement):
@@ -775,6 +825,8 @@ class Intersection(NetworkElement):
     signals: Tuple[Signal]
 
     crossings: Tuple[PedestrianCrossing]    # also ordered to preserve adjacency
+    # tolerance for determining whether a point is contained in a class object's polygon region
+    tolerance: 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
 
     def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
         if debug:
@@ -783,6 +835,11 @@ class Intersection(NetworkElement):
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
         return polygonalRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+
+    def contains(self, smt_file_path, cached_variables, shapely_point ,debug = False):
+        if self.polygon.contains(shapely_point) or self.polygon.distance(shapely_point) <= self.tolerance:
+            return True
+        return False
 
     def __attrs_post_init__(self):
         super().__attrs_post_init__()
@@ -896,7 +953,7 @@ class Network:
     #: Whether or not cars drive on the left in this network.
     driveOnLeft: bool = False
     #: Distance tolerance for testing inclusion in network elements.
-    tolerance: float = 0
+    tolerance: float(3) # lanes are usually 12ft wide (=3.6m)
 
     # convenience regions aggregated from various types of network elements
     drivableRegion: PolygonalRegion = None

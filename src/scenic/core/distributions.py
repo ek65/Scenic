@@ -1625,7 +1625,7 @@ class Options(MultiplexerDistribution):
 				break
 		return output_bool
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False, encode=True):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Options class")
 
@@ -1637,13 +1637,13 @@ class Options(MultiplexerDistribution):
 
 		if encode:
 			if self.checkOptionsType(roads.NetworkElement):
+				assert(isinstance(smt_var, tuple) and len(smt_var)==2)
+
 				valid_options = []
 				if not isConditioned(self):
 					current_obj_pos = shapely.geometry.Point(cached_variables['current_obj_pos'])
 					for opt in self.options:
-						if (opt.polygon.contains(current_obj_pos)) or (opt.polygon.distance(current_obj_pos) <= 3):
-							# TODO: replace this if statement with contains() in roads.py 
-							# for unknown reason, "tolerance" attribute cannot be added
+						if (opt.polygon.contains(current_obj_pos)):
 							valid_options.append(opt)
 					if len(valid_options) == 0:
 						writeSMTtoFile(smt_file_path, "len(valid_options)==0")
@@ -1653,10 +1653,6 @@ class Options(MultiplexerDistribution):
 				else:
 					valid_options = self._conditioned
 
-				x = findVariableName(smt_file_path, cached_variables, "x", debug=debug)
-				y = findVariableName(smt_file_path, cached_variables, "y", debug=debug)
-				output = (x,y)
-
 				if debug:
 					writeSMTtoFile(smt_file_path, "# of network elements: "+ str(len(valid_options.options)))
 					for elem in valid_options.options:
@@ -1665,18 +1661,18 @@ class Options(MultiplexerDistribution):
 				for elem in valid_options.options:
 					if debug:
 						writeSMTtoFile(smt_file_path, "Options elem: "+str(type(elem)))
-					point = elem.encodeToSMT(smt_file_path, cached_variables, debug=debug)
-					(x_cond, y_cond) = vector_operation_smt(point, "equal", output)
+					point = elem.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+					(x_cond, y_cond) = vector_operation_smt(point, "equal", smt_var)
 					writeSMTtoFile(smt_file_path, smt_assert(None, x_cond))
 					writeSMTtoFile(smt_file_path, smt_assert(None, y_cond))
-				return output
+				return smt_var
 
 			elif self.checkOptionsType(class_type = float) or self.checkOptionsType(class_type = int):
-				variable = findVariableName(smt_file_path, cached_variables, "var", debug=debug)
+				assert(isinstance(smt_var, str))
 				cumulative_smt_encoding = None
 				count = 0
 				for opt in self.options:
-					smt_encoding = smt_equal(variable, str(opt))
+					smt_encoding = smt_equal(smt_var, str(opt))
 					if count == 0:
 						cumulative_smt_encoding = smt_encoding
 					else:
@@ -1685,7 +1681,7 @@ class Options(MultiplexerDistribution):
 
 				cumulative_smt_encoding = smt_assert(None, cumulative_smt_encoding)
 				writeSMTtoFile(smt_file_path, cumulative_smt_encoding)
-				return variable
+				return smt_var
 
 			else: 
 				raise NotImplementedError

@@ -163,17 +163,20 @@ def pruneValidRegion(smt_file_path, cached_variables, region_polygon, debug=Fals
 
 	return intersecting_triangles
 
-def encodePolygonalRegion_SMT(smt_file_path, cached_variables, triangles, debug=False):
+def encodePolygonalRegion_SMT(smt_file_path, cached_variables, triangles, smt_var, debug=False):
 	""" Assumption: the polygons given from polygon region will always be in triangles """
 	if debug:
 		writeSMTtoFile(smt_file_path, "encodePolygonalRegion_SMT")
-	triangle_list = triangles if isinstance(triangles, list) else list(triangles)
-	cumulative_smt_encoding = None
 
+	assert(isinstance(smt_var, tuple) and len(smt_var)==2)
+	(x, y) = smt_var
 	s = findVariableName(smt_file_path, cached_variables, 's', debug=debug)
 	t = findVariableName(smt_file_path, cached_variables, 't', debug=debug)
-	x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
-	y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+	egoVisibleRegion = cached_variables['egoVisibleRegion']
+	egoVisibleRegion.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+
+	triangle_list = triangles if isinstance(triangles, list) else list(triangles)
+	cumulative_smt_encoding = None
 
 	# 0 <= s <= 1
 	s_constraint = smt_assert("and", smt_lessThanEq("0",s), smt_lessThanEq(s,"1"))
@@ -227,7 +230,6 @@ def encodePolygonalRegion_SMT(smt_file_path, cached_variables, triangles, debug=
 
 	final_smt_encoding = smt_assert(None, cumulative_smt_encoding)
 	writeSMTtoFile(smt_file_path, final_smt_encoding)
-
 	return (x,y)
 
 def toPolygon(thing):
@@ -264,7 +266,7 @@ class PointInRegionDistribution(VectorDistribution):
 			self.region.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
 		if debug:
 			writeSMTtoFile(smt_file_path, "PointInRegionDistribution")
 
@@ -278,44 +280,38 @@ class PointInRegionDistribution(VectorDistribution):
 		else:
 			region = self.region
 
-		output_var = None
 		if isinstance(self._conditioned, tuple):
 			if debug:
 				writeSMTtoFile(smt_file_path, "PointInRegionDistribution is conditioned : " + str(self._conditioned))
-			vector = self._conditioned
-			output_var = (str(vector.x), str(vector.y))
+			(x, y) = self._conditioned
+			output_var = (str(x), str(y))
+			return cacheVarName(cached_variables, self, output_var)
 
 		elif isinstance(region, UniformDistribution):
 			possibleRegions = region.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
 			if possibleRegions is None:
 				return None
-			x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
-			y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
-			output_var = (x,y)
 
 			for reg in possibleRegions.options: # UniformDist encodeToSMT outputs Options class
 				point = reg.encodeToSMT(smt_file_path, cached_variables, debug=debug)
-				smt_encoding = vector_operation_smt(output_var, "equal", point)
+				smt_encoding = vector_operation_smt(smt_var, "equal", point)
 				smt_encoding = smt_assert(None, smt_encoding)
 				writeSMTtoFile(smt_file_path, smt_encoding)
 
 		elif isinstance(region, Options):
 			import scenic.domains.driving.roads as roads
 			if region._conditioned.checkOptionsType(roads.NetworkElement):
-				output_var = region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+				region.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
 			else:
 				raise NotImplementedError
 
 		elif isinstance(region, Region):
-			output_var = region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+			region.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
 		
 		else:
 			raise NotImplementedError
 
-		if output_var is None:
-			return None
-
-		return cacheVarName(cached_variables, self, output_var)
+		return cacheVarName(cached_variables, self, smt_var)
 
 	def sampleGiven(self, value):
 		return value[self.region].uniformPointInner()
@@ -571,7 +567,7 @@ class SectorRegion(Region):
 
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
 		if debug:
 			writeSMTtoFile(smt_file_path, "SectorRegion")
 			writeSMTtoFile(smt_file_path, "center: "+str(self.center))
@@ -595,11 +591,7 @@ class SectorRegion(Region):
 		"""
 
 		# Instantiate variables to return
-		(output_x, output_y) = cached_variables['current_obj_pos']
-		output_x = str(output_x)
-		output_y = str(output_y)
-		ego_x = str(cached_variables['ego'].x)
-		ego_y = str(cached_variables['ego'].y)
+		(output_x, output_y) = smt_var
 
 		# Check whether there are any other distributions to encode first
 		(center_x, center_y) = checkAndEncodeSMT(smt_file_path, cached_variables, self.center, debug=debug)
@@ -610,8 +602,8 @@ class SectorRegion(Region):
 		# Encode and write to file, a contraint for a circle
 		if debug: 
 			writeSMTtoFile(smt_file_path, "encode circle of ego_visibleRegion")
-		shifted_output_x = smt_subtract(output_x, ego_x)
-		shifted_output_y = smt_subtract(output_y, ego_y)
+		shifted_output_x = smt_subtract(output_x, center_x)
+		shifted_output_y = smt_subtract(output_y, center_y)
 		square_center_x = smt_multiply(shifted_output_x, shifted_output_x)
 		square_center_y = smt_multiply(shifted_output_y, shifted_output_y)
 		square_radius = smt_multiply(radius, radius)
@@ -657,7 +649,7 @@ class SectorRegion(Region):
 		left_of_rightLine_constraint = smt_lessThanEq("0", subtraction_right)
 		writeSMTtoFile(smt_file_path, smt_assert(None, left_of_rightLine_constraint))
 
-		return cacheVarName(cached_variables, self, (output_x, output_y))
+		return cacheVarName(cached_variables, self, smt_var)
 
 	@cached_property
 	def polygon(self):
@@ -1063,9 +1055,12 @@ class PolygonalRegion(Region):
 	def conditionforSMT(self, condition, conditioned_bool):
 		raise NotImplementedError
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Class PolygonalRegion")
+
+		import shapely.geometry.polygon as polygon
+		assert(not isinstance(self.polygons, polygon.Polygon))
 
 		if self in set(cached_variables.keys()):
 			if debug:
@@ -1073,8 +1068,8 @@ class PolygonalRegion(Region):
 			return cached_variables[self]
 
 		polygon_triangles = [triangle[0] for triangle in self.trianglesAndBounds]
-		point = encodePolygonalRegion_SMT(smt_file_path, cached_variables, polygon_triangles, debug=debug)
-		return cacheVarName(cached_variables, self, point)
+		encodePolygonalRegion_SMT(smt_file_path, cached_variables, polygon_triangles, smt_var, debug=debug)
+		return cacheVarName(cached_variables, self, smt_var)
 
 	def uniformPointInner(self):
 		triangle, bounds = random.choices(

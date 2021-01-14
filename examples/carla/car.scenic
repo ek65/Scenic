@@ -2,5 +2,5 @@ param map = localPath('../../tests/formats/opendrive/maps/CARLA/Town05.xodr')  #
 param carla_map = 'Town05'
 model scenic.simulators.carla.model #located in scenic/simulators/carla/model.scenic
 
-ego = Car on road
+ego = Car on Uniform(*network.roads)
 other = Car ahead of ego by 5

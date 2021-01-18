@@ -14,6 +14,7 @@ from scenic.core.lazy_eval import (LazilyEvaluable,
     requiredProperties, needsLazyEvaluation, valueInContext, makeDelayedFunctionCall)
 from scenic.core.utils import argsToString, areEquivalent, cached, sqrt2
 from scenic.core.errors import RuntimeParseError
+import matplotlib.pyplot as plt
 
 def smt_add(var1, var2):
 	assert(isinstance(var1, str))
@@ -71,6 +72,9 @@ def smt_ite(predicate, output1, output2):
 	assert(isinstance(output2, str))
 	return "(ite "+predicate+" "+output1+" "+output2+")"
 
+def smt_not(predicate):
+	return "(not "+predicate+")"
+
 def smt_assert(operation_type, var1, var2=None):
 	assert(isinstance(var1, str))
 	assert(isinstance(var2, str) or var2==None)
@@ -93,6 +97,8 @@ def smt_assert(operation_type, var1, var2=None):
 		op_encoding = smt_lessThanEq(var1, var2)
 	elif operation_type == "<":
 		op_encoding = smt_lessThan(var1, var2)
+	elif operation_type == "not":
+		op_encoding = smt_not(var1)
 	elif operation_type == None:
 		op_encoding = var1
 	else:
@@ -174,7 +180,7 @@ def findVariableName(smt_file_path, cached_variables, class_name, class_type=Non
 	cached_variables['variables'].append(var_name)
 	return var_name
 
-def checkAndEncodeSMT(smt_file_path, cached_variables, obj, debug=False):
+def checkAndEncodeSMT(smt_file_path, cached_variables, obj, smt_var, debug=False):
 	# checks the type of the obj and encode to smt accordingly
 	# this step can be done in each class, but having this function
 	# saves the trouble of executing the same step, repeatedly
@@ -185,7 +191,7 @@ def checkAndEncodeSMT(smt_file_path, cached_variables, obj, debug=False):
 	elif isinstance(obj, str):
 		return obj
 	elif isinstance(obj._conditioned, Samplable):
-		return obj._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+		return obj._conditioned.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
 	elif isinstance(obj._conditioned, int) or isinstance(obj._conditioned, float):
 		return str(obj)
 	elif isinstance(obj._conditioned, str):
@@ -489,7 +495,7 @@ class TupleDistribution(Distribution, collections.abc.Sequence):
 		self.coordinates = coordinates
 		self.builder = builder
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
 		raise NotImplementedError
 
 	def __len__(self):
@@ -559,7 +565,7 @@ class FunctionDistribution(Distribution):
 				support.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		   encodeToSMT() must return 'cached_variables' dictionary
@@ -600,7 +606,7 @@ class FunctionDistribution(Distribution):
 			return cacheVarName(cached_variables, self, output)
 
 		elif self.function == geometry.normalizeAngle:
-			angle = checkAndEncodeSMT(smt_file_path, cached_variables, self.arguments[0], debug=debug)
+			angle = checkAndEncodeSMT(smt_file_path, cached_variables, smt_var, self.arguments[0], debug=debug)
 			output = normalizeAngle_SMT(angle)
 			return cacheVarName(cached_variables, self, output)
 
@@ -698,7 +704,7 @@ class StarredDistribution(Distribution):
 		self.lineno = lineno	# for error handling when unpacking fails
 		super().__init__(value, valueType=value.valueType)
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False, encode=True):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Class StarredDistribution encodeToSMT")
 
@@ -710,7 +716,7 @@ class StarredDistribution(Distribution):
 				writeSMTtoFile(smt_file_path, "StarredDistribution already cached")
 			return cached_variables[self]
 
-		return self.value._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)	
+		return self.value._conditioned.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=encode)	
 
 	def sampleGiven(self, value):
 		return value[self.value]
@@ -723,7 +729,7 @@ class StarredDistribution(Distribution):
 
 class MethodDistribution(Distribution):
 	"""Distribution resulting from passing distributions to a method of a fixed object"""
-	def __init__(self, method, obj, args, kwargs, valueType=None):
+	def __init__(self, method, obj, args, kwargs, smt_var, valueType=None):
 		args = tuple(toDistribution(arg) for arg in args)
 		kwargs = { name: toDistribution(arg) for name, arg in kwargs.items() }
 		if valueType is None:
@@ -734,7 +740,7 @@ class MethodDistribution(Distribution):
 		self.arguments = args
 		self.kwargs = kwargs
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		   encodeToSMT() must return 'cached_variables' dictionary
@@ -764,7 +770,7 @@ class MethodDistribution(Distribution):
 		if isConditioned(self.object) and isinstance(self.object, Samplable):
 			obj = self.object._conditioned
 		elif isinstance(self.object, Options):
-			obj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
+			obj = self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=False)
 		elif isinstance(self.object, roads.NetworkElement):
 			obj = self.object
 		else:
@@ -882,7 +888,7 @@ class AttributeDistribution(Distribution):
 		self.attribute = attribute
 		self.object = obj
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False, encode=True):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Class AttributeDistribution encodeToSMT")
 
@@ -898,15 +904,15 @@ class AttributeDistribution(Distribution):
 		if encode:
 			if isinstance(self.object, Point):
 				return getattr(self.object._conditioned, self.attribute).encodeToSMT(smt_file_path, 
-										cached_variables, debug=debug)
+										cached_variables, smt_var, debug=debug)
 
 			elif isinstance(self.object, Options):
 				if self.object.checkOptionsType(roads.NetworkElement):
-					return self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+					return self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=encode)
 				else: 
 					raise NotImplementedError
 			elif isinstance(self.object, UniformDistribution):
-				return self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+				return self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=encode)
 			else:
 				if debug:
 					writeSMTtoFile("NEW CASE: ", type(self.object._conditioned))
@@ -915,13 +921,14 @@ class AttributeDistribution(Distribution):
 		else:
 			if isinstance(self.object, Options):
 				if self.object.checkOptionsType(roads.NetworkElement):
-					networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+					networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=encode)
 					if networkObj is None :
 						return None
 
 					if self.attribute == 'orientation':
 						if debug: 
 							writeSMTtoFile(smt_file_path, "encode=False, self.attribute == orientation")
+							writeSMTtoFile(smt_file_path, "networkObj: "+str(networkObj))
 						return networkObj
 
 					outputObjs = []
@@ -932,7 +939,7 @@ class AttributeDistribution(Distribution):
 					raise NotImplementedError
 
 			elif isinstance(self.object, UniformDistribution):
-				networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+				networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=encode)
 				if networkObj is None :
 					return None
 
@@ -1008,7 +1015,7 @@ class OperatorDistribution(Distribution):
 				op._conditioned.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		   encodeToSMT() must return 'cached_variables' dictionary
@@ -1031,15 +1038,15 @@ class OperatorDistribution(Distribution):
 				writeSMTtoFile(smt_file_path, "OperatorDistribution already exists in cached_variables dict")
 			return cached_variables[self]
 
-		obj_var = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug)
-
-		assert(len(self.operands) < 2)
-		operand = self.operands[0]
-		operand_smt = checkAndEncodeSMT(smt_file_path, cached_variables, operand, debug=debug)
 		output = findVariableName(smt_file_path, cached_variables, 'opdist', debug=debug)
 
 		if self.operator in ['__add__', '__radd__' , '__sub__', '__rsub__', '__truediv__', '__rtruediv__', '__mul__', '__rmul__',\
 			'__floordiv__', '__rfloordiv__','__mod__', '__rmod__','__divmod__', '__rdivmod__','__pow__', '__rpow__']:
+
+			obj_var = self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+			assert(len(self.operands) < 2)
+			operand = self.operands[0]
+			operand_smt = checkAndEncodeSMT(smt_file_path, cached_variables, operand, smt_var, debug=debug)
 
 			if self.operator == '__add__' or self.operator == '__radd__':
 				summation = smt_add(obj_var, operand_smt)
@@ -1083,23 +1090,27 @@ class OperatorDistribution(Distribution):
 
 		elif self.operator == '__getitem__':
 			import scenic.core.vectors as vectors
-			if isinstance(self.object.sample(), vectors.VectorField):
+			if isinstance(self.object, AttributeDistribution) and self.object.attribute == 'orientation':
 				# type(self.object) could be AttributeDist, Options
+
+				import scenic.core.vectors as vectors
 
 				if debug:
 					writeSMTtoFile(smt_file_path, "OperatorDistribution self.operator == __getitem__")
 
-				options = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
 				# all 'encode=False' flag outputs Options class 
+				optionsRegion = self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=False)
 
 				if debug:
-					writeSMTtoFile(smt_file_path, "options: " +str(options))
+					writeSMTtoFile(smt_file_path, "operatordist optionRegion: "+str(optionsRegion))
 
-				import scenic.core.vectors as vectors
-				for opt in options.options:
-					var = opt.encodeToSMT(smt_file_path, cached_variables, debug=debug)
-					smt_encoding = smt_assert("equal", output, var)
-					writeSMTtoFile(smt_file_path, smt_encoding)
+				for reg in optionsRegion.options:
+					reg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+
+				heading_var = output
+				elems = optionsRegion.options
+				self.encodeHeading(elems, smt_file_path, smt_var, heading_var, debug=debug)
+
 			else:
 				raise NotImplementedError
 		else:
@@ -1109,10 +1120,151 @@ class OperatorDistribution(Distribution):
 
 		return cacheVarName(cached_variables, self, output)
 
-	# def encodeHeading(self, element):
-	# 	if len(element.centerline.points) == 2:
-	# 		point = element.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+	# find line perpendicular to the centerline segment & pass through the centerline point
+	def encodeHeading(self, elems, smt_file_path, smt_var, heading_var, debug=False):
+		import shapely.geometry
+		import scenic.core.geometry as geometry
+		import scenic.core.vectors as vectors
 
+		smt_encoding = None
+		for elem in elems:
+			centerlinePts = elem.centerline.points
+	        
+			if debug:
+				plt.plot(*elem.polygon.exterior.xy)
+				for pt in centerlinePts:
+					[x1,y1] = pt
+					plt.plot(x1,y1,'ko')
+
+			for i in range(len(centerlinePts)-1):
+		        # find the previous two points
+				if i==0:
+					prevLeftPt = elem.leftEdge.points[0]
+					prevRightPt = elem.rightEdge.points[0]
+					prevCenterPt = centerlinePts[0]
+
+				[x1,y1] = prevCenterPt
+				[x2,y2] = centerlinePts[i+1]
+				slope = float(y2-y1)/float(x2-x1)
+
+				if abs(slope) > 20:
+					perpendicular_slope = 0
+					bias = y2
+
+					# find two points on the perpendicular line
+					left_x, right_x = x2 - 5, x2 + 5
+					left_y, right_y = bias, bias
+
+				elif abs(slope) < 0.2:
+					left_x, right_x = x2, x2
+					left_y, right_y = y2 - 5, y2 + 5
+
+				else:
+					perpendicular_slope = -1 / float(slope)
+					bias = y2 - perpendicular_slope * x2
+					left_x, right_x = x2 - 5, x2 + 5
+					left_y = perpendicular_slope * left_x + bias
+					right_y = perpendicular_slope * right_x + bias
+
+				left_pt = (left_x, left_y)
+				right_pt = (right_x, right_y)
+				line = shapely.geometry.LineString([left_pt, right_pt])
+
+				intersect_leftPt = elem.leftEdge.lineString.intersection(line)
+				intersect_rightPt = elem.rightEdge.lineString.intersection(line)
+
+				if isinstance(intersect_leftPt, shapely.geometry.MultiPoint):
+					intersect_leftPt = self.findClosestPoint(intersect_leftPt, shapely.geometry.Point(x2, y2))
+				if isinstance(intersect_leftPt, shapely.geometry.LineString):
+					intersect_leftPt = self.findClosestPoint(intersect_leftPt, shapely.geometry.Point(x2, y2))
+				if isinstance(intersect_rightPt, shapely.geometry.MultiPoint):
+					intersect_rightPt = self.findClosestPoint(intersect_rightPt, shapely.geometry.Point(x2, y2))
+				if isinstance(intersect_rightPt, shapely.geometry.LineString):
+					intersect_rightPt = self.findClosestPoint(intersect_rightPt, shapely.geometry.Point(x2, y2))
+
+				# find the intersecting left/right points with left & right edge of the elem
+				if i+1 < len(centerlinePts)-1:
+					leftPt = (intersect_leftPt.x, intersect_leftPt.y)
+					rightPt = (intersect_rightPt.x, intersect_rightPt.y)
+				else:
+					leftPt = elem.leftEdge.lineString.coords[-1]
+					rightPt = elem.rightEdge.lineString.coords[-1]
+
+				# encode a region left of the vector [leftEdgePt, rightEdgePt]
+				leftOf_smt = self.encodeLeftRightOf(prevLeftPt, prevRightPt, smt_var, smt_file_path, side='left')
+
+				# encode a region right of the vector [leftPt, leftPt]
+				rightOf_smt = self.encodeLeftRightOf(leftPt, rightPt, smt_var, smt_file_path, side='right')
+
+				# cache previous points
+				prevLeftPt = leftPt
+				prevRightPt = rightPt
+				prevCenterPt = centerlinePts[i]
+
+				# encode heading smt with ite
+				joint_smt = smt_and(leftOf_smt, rightOf_smt)
+				heading = geometry.normalizeAngle(vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2)))
+
+				if smt_encoding is None:
+					smt_encoding = smt_ite(joint_smt, str(heading), '-1000')
+				else:
+					smt_encoding = smt_ite(joint_smt, str(heading), smt_encoding)
+
+				if debug:
+				    # print("i: ",i)
+				    # print("heading: ", heading)
+				    # print("prevCenterPt: ", prevCenterPt)
+				    # print("nextCenterPt: ", centerlinePts[i+1])
+					if i%2==0:
+						color1 = 'ro'
+						color2 = 'bo'
+					else:
+						color1 = 'gx'
+						color2 = 'kx'
+					plt.plot([left_x,right_x], [left_y,right_y], 'o-')
+					plt.plot(intersect_leftPt.x, intersect_leftPt.y, color2)
+					plt.plot(intersect_rightPt.x, intersect_rightPt.y, color2)
+			if debug:
+				plt.show()
+		        
+		writeSMTtoFile(smt_file_path, smt_assert("equal", heading_var , smt_encoding))
+		writeSMTtoFile(smt_file_path, smt_assert("not", smt_equal(heading_var, '-1000')))
+		return heading_var
+
+	def encodeLeftRightOf(self, leftPt, rightPt, smt_var, smt_file_path, side):
+	    """ D >= 0 : the point, (xp,yp), is on the left-hand side or the line 
+	        D = (x2-x1) * (yp-y1) - (xp-x1) * (y2-y1)
+	    """
+	    (xp, yp) = smt_var
+	    (x1,y1) = (str(leftPt[0]), str(leftPt[1]))
+	    (x2,y2) = (str(rightPt[0]), str(rightPt[1]))
+	    x2_x1 = smt_subtract(x2,x1)
+	    yp_y1 = smt_subtract(yp,y1)
+	    mult1 = smt_multiply(x2_x1, yp_y1)
+	    xp_x1 = smt_subtract(xp,x1)
+	    y2_y1 = smt_subtract(y2,y1)
+	    mult2 = smt_multiply(xp_x1, y2_y1)
+	    D = smt_subtract(mult1, mult2)
+	    if side == 'left':
+	        smt_encoding = smt_lessThanEq('0', D)
+	    else:
+	        smt_encoding = smt_lessThanEq(D ,'0')
+	        
+	#     writeSMTtoFile(smt_file_path, smt_encoding)
+	    return smt_encoding
+
+	def findClosestPoint(self, elems, point):
+		import shapely.geometry
+
+		if isinstance(elems, shapely.geometry.MultiPoint):
+			multiPts = list(elems.geoms)
+		if isinstance(elems, shapely.geometry.LineString):
+			multiPts = [shapely.geometry.Point(*pt) for pt in elems.coords]
+
+		dist = []
+		for pt in multiPts:
+			dist.append(pt.distance(point))
+		return multiPts[dist.index(min(dist))]
 
 
 	@staticmethod
@@ -1244,7 +1396,7 @@ class Range(Distribution):
 			self.high.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
 		"""
 			smt_file_path must be an absolute path, not relative to a root of non-home folder
 			to avoid duplicate variable names, check for variable existence in cached_variables dict:
@@ -1261,9 +1413,9 @@ class Range(Distribution):
 				writeSMTtoFile(smt_file_path, "Range already cached")
 			return cached_variables[self]
 
-		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, debug=debug)
-		high = checkAndEncodeSMT(smt_file_path, cached_variables, self.high, debug=debug)
-		var_name = findVariableName(smt_file_path, cached_variables, 'range', debug=debug)
+		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, smt_var, debug=debug)
+		high = checkAndEncodeSMT(smt_file_path, cached_variables, self.high, smt_var, debug=debug)
+		var_name = findVariableName(smt_file_path, cached_variables, 'range', smt_var, debug=debug)
 
 		lower_bound = smt_lessThanEq(low, var_name)
 		upper_bound = smt_lessThanEq(var_name, high)
@@ -1325,7 +1477,7 @@ class Normal(Distribution):
 			self.stddev.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		"""
@@ -1426,7 +1578,7 @@ class TruncatedNormal(Normal):
 			self.high.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		"""
@@ -1442,8 +1594,8 @@ class TruncatedNormal(Normal):
 				writeSMTtoFile(smt_file_path, "TruncatedNormal already cached")
 			return cached_variables[self]
 
-		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, debug=debug)
-		high = checkAndEncodeSMT(smt_file_path, cached_variables, self.high, debug=debug)
+		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, smt_var, debug=debug)
+		high = checkAndEncodeSMT(smt_file_path, cached_variables, self.high, smt_var, debug=debug)
 		var_name = findVariableName(smt_file_path, cached_variables, 'truncated_normal', debug=debug)
 
 		lower_bound = smt_lessThanEq(low, var_name)
@@ -1542,7 +1694,7 @@ class DiscreteRange(Distribution):
 			self.high.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		"""
@@ -1557,8 +1709,8 @@ class DiscreteRange(Distribution):
 				writeSMTtoFile(smt_file_path, "DiscreteRange is already cached")
 			return cached_variables[self]
 
-		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, debug=debug)
-		high = checkAndEncodeSMT(smt_file_path, cached_variables, self.high, debug=debug)
+		low = checkAndEncodeSMT(smt_file_path, cached_variables, smt_var, self.low, debug=debug)
+		high = checkAndEncodeSMT(smt_file_path, cached_variables, smt_var, self.high, debug=debug)
 		var_name = findVariableName(smt_file_path, cached_variables, 'discrete_range', "Int", debug=debug)
 
 		lower_bound = smt_lessThanEq(low, var_name)
@@ -1629,7 +1781,7 @@ class Options(MultiplexerDistribution):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Options class")
 
-		if self in cached_variables.keys():
+		if encode and self in cached_variables.keys():
 			return cached_variables[self]
 
 		import scenic.domains.driving.roads as roads
@@ -1640,32 +1792,45 @@ class Options(MultiplexerDistribution):
 				assert(isinstance(smt_var, tuple) and len(smt_var)==2)
 
 				valid_options = []
+				egoSectorPolygon = cached_variables['egoVisibleRegion'].polygon
 				if not isConditioned(self):
-					current_obj_pos = shapely.geometry.Point(cached_variables['current_obj_pos'])
 					for opt in self.options:
-						if (opt.polygon.contains(current_obj_pos)):
+						intersection = egoSectorPolygon.intersection(opt.polygon)
+						if not (intersection.is_empty):
 							valid_options.append(opt)
+
+					import matplotlib.pyplot as plt
+					import shapely.geometry.polygon as polygon
+					# if debug:
+					for elem in valid_options:
+						if isinstance(elem.polygon, polygon.Polygon):
+							plt.plot(*elem.polygon.exterior.xy)
+						else:
+							for geom in elem.polygon.geoms:
+								plt.plot(*geom.exterior.xy)
+					plt.plot(*egoSectorPolygon.exterior.xy)
+					plt.show()
+
+					if debug:
+						writeSMTtoFile(smt_file_path, "valid_options.options: "+str(valid_options))
+
 					if len(valid_options) == 0:
 						writeSMTtoFile(smt_file_path, "len(valid_options)==0")
 						return None
+
 					self._conditioned = Options(valid_options)
 					valid_options = self._conditioned
 				else:
 					valid_options = self._conditioned
 
-				if debug:
-					writeSMTtoFile(smt_file_path, "# of network elements: "+ str(len(valid_options.options)))
-					for elem in valid_options.options:
-						writeSMTtoFile(smt_file_path, "centerline of element: "+ str(elem.centerline))
- 
-				for elem in valid_options.options:
-					if debug:
-						writeSMTtoFile(smt_file_path, "Options elem: "+str(type(elem)))
-					point = elem.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
-					(x_cond, y_cond) = vector_operation_smt(point, "equal", smt_var)
-					writeSMTtoFile(smt_file_path, smt_assert(None, x_cond))
-					writeSMTtoFile(smt_file_path, smt_assert(None, y_cond))
-				return smt_var
+				import scenic.core.regions as regions
+				import shapely.geometry.multipolygon as multipolygon
+
+				polygonalRegions = [regions.regionFromShapelyObject(elem.polygon) for elem in valid_options.options]
+				for polygonReg in polygonalRegions:
+					polygonReg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+				
+				return cacheVarName(cached_variables, self, smt_var)
 
 			elif self.checkOptionsType(class_type = float) or self.checkOptionsType(class_type = int):
 				assert(isinstance(smt_var, str))
@@ -1681,26 +1846,38 @@ class Options(MultiplexerDistribution):
 
 				cumulative_smt_encoding = smt_assert(None, cumulative_smt_encoding)
 				writeSMTtoFile(smt_file_path, cumulative_smt_encoding)
-				return smt_var
+				return cacheVarName(cached_variables, self, smt_var)
 
 			else: 
 				raise NotImplementedError
 
 		else:
 			if self.checkOptionsType(roads.NetworkElement):
-				valid_options = None
+				valid_options = []
+				egoSectorPolygon = cached_variables['egoVisibleRegion'].polygon
 				if not isConditioned(self):
 					valid_options = []
 					for opt in self.options:
-						if opt.polygon.contains(shapely.geometry.Point(cached_variables['current_obj_pos'])):
+						if not (egoSectorPolygon.intersection(opt.polygon).is_empty):
 							valid_options.append(opt)
 
 					if len(valid_options) == 0:
 						return None
 
+					import matplotlib.pyplot as plt
+					import shapely.geometry.polygon as polygon
+					# if debug:
+					for elem in valid_options:
+						if isinstance(elem.polygon, polygon.Polygon):
+							plt.plot(*elem.polygon.exterior.xy)
+						else:
+							for geom in elem.polygon.geoms:
+								plt.plot(*geom.exterior.xy)
+
+					plt.plot(*egoSectorPolygon.exterior.xy)
+					plt.show()
+
 					self._conditioned = Options(valid_options)
-				else:
-					valid_options = self._conditioned
 
 				return self._conditioned
 			else:
@@ -1792,7 +1969,7 @@ class UniformDistribution(Distribution):
 				break
 		return output_bool
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode = True):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False, encode = True):
 		if debug:
 			writeSMTtoFile(smt_file_path, "class UniformDistribution encodeToSMT")
 
@@ -1808,7 +1985,7 @@ class UniformDistribution(Distribution):
 		import scenic.domains.driving.roads as roads
 		if self.checkOptionsType(roads.NetworkElement):
 			if not isConditioned(self):
-				options = self.options[0].encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
+				options = self.options[0].encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=False)
 				if options is None:
 					return None
 				self._conditioned = Options(options)

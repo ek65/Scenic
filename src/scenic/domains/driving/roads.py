@@ -423,7 +423,7 @@ class Road(LinearElement):
             writeSMTtoFile(smt_file_path, "class Road laneSectionAtEncodeSMT")
 
         point = _toVector(smt_var)
-        output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+        output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, smt_var, debug=debug)
         intersectingLanes = self.network.findPointInForSMTEncoding(cached_variables['egoVisibleRegion'], self.lanes)
         if intersectingLanes is None:
             return None
@@ -434,7 +434,7 @@ class Road(LinearElement):
 
         intersection = [elem.polygon for elem in intersectingSections]
         intersectingRegion = regions.PolygonalRegion(polygon=shapely.geometry.MultiPolygon(intersection))
-        pointOnRegion = intersectingRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+        pointOnRegion = intersectingRegion.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
         smt_encoding = vector_operation_smt(output_point, "equal", pointOnRegion)
         writeSMTtoFile(smt_file_path, smt_encoding)
         return output_point
@@ -504,7 +504,7 @@ class LaneGroup(LinearElement):
     #: Opposite lane group of the same road, if any.
     _opposite: Union[LaneGroup, None] = None
 
-    def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+    def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         raise NotImplementedError
 
     @property
@@ -767,13 +767,13 @@ class Sidewalk(_ContainsCenterline, LinearElement):
     # tolerance for determining whether a point is contained in a class object's polygon region
     tolerance: float = 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
 
-    def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+    def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "roads.py Class Sidewalk encodeToSMT")
 
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
-        return polygonalRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+        return polygonalRegion.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
 
     def contains(self, smt_file_path, cached_variables, shapely_point ,debug = False):
         if self.polygon.contains(shapely_point) or self.polygon.distance(shapely_point) <= self.tolerance:
@@ -940,7 +940,7 @@ class Network:
     #: Whether or not cars drive on the left in this network.
     driveOnLeft: bool = False
     #: Distance tolerance for testing inclusion in network elements.
-    tolerance: float(3) # lanes are usually 12ft wide (=3.6m)
+    tolerance: float = 0 
 
     # convenience regions aggregated from various types of network elements
     drivableRegion: PolygonalRegion = None
@@ -991,6 +991,7 @@ class Network:
                     edges.append(road.forwardLanes.curb)
                 if road.backwardLanes:
                     edges.append(road.backwardLanes.curb)
+
             self.curbRegion = PolylineRegion.unionAll(edges)
 
         if self.roadDirection is None:
@@ -1147,9 +1148,9 @@ class Network:
             if len(versionField) != 4:
                 raise pickle.UnpicklingError(f'{cls.pickledExt} file is corrupted')
             version = struct.unpack('<I', versionField)
-            if version[0] != cls._currentFormatVersion():
-                raise pickle.UnpicklingError(f'{cls.pickledExt} file is too old; '
-                                             'regenerate it from the original map')
+            # if version[0] != cls._currentFormatVersion():
+            #     raise pickle.UnpicklingError(f'{cls.pickledExt} file is too old; '
+            #                                  'regenerate it from the original map')
             digest = f.read(64)
             if len(digest) != 64:
                 raise pickle.UnpicklingError(f'{cls.pickledExt} file is corrupted')
@@ -1223,7 +1224,7 @@ class Network:
             writeSMTtoFile(smt_file_path, "findPointInEncodeSMT")
 
         point = _toVector(smt_var)
-        output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+        output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, smt_var, debug=debug)
         intersectingElems = self.findPointInForSMTEncoding(cached_variables['egoVisibleRegion'], elems)
         if intersectingElems == []:
             return None
@@ -1290,7 +1291,7 @@ class Network:
         # TODO : optimize the use of point
         point = _toVector(smt_var)
         region = cached_variables['egoVisibleRegion']
-        output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+        output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, smt_var, debug=debug)
 
         found = []
         for thing in things:
@@ -1312,7 +1313,7 @@ class Network:
         elif isinstance(intersection[0], shapely.geometry.LineString) or \
                  isinstance(intersection[0], shapely.geometry.MultiLineString):
             intersectingRegion = regions.PolyLineRegion(polygon=shapely.geometry.MultiLineString(intersection))
-        pointOnRegion = intersectingRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+        pointOnRegion = intersectingRegion.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
         smt_encoding = vector_operation_smt(output_point, "equal", pointOnRegion)
         writeSMTtoFile(smt_file_path, smt_encoding)
         return output_point
@@ -1383,7 +1384,7 @@ class Network:
 
         intersection = [elem.polygon for elem in intersectingSections]
         intersectingRegion = regions.PolygonalRegion(polygon=shapely.geometry.MultiPolygon(intersection))
-        pointOnRegion = intersectingRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+        pointOnRegion = intersectingRegion.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
         smt_encoding = vector_operation_smt(output_point, "equal", pointOnRegion)
         writeSMTtoFile(smt_file_path, smt_encoding)
         return output_point
@@ -1399,7 +1400,7 @@ class Network:
         if debug:
             writeSMTtoFile(smt_file_path, "laneGroupAtEncodeSMT")
         point = _toVector( smt_var)
-        output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+        output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, smt_var, debug=debug)
         intersectingRoads = self.findPointInForSMTEncoding(cached_variables['egoVisibleRegion'], self.allRoads)
         assert(intersectingRoads != [])
 
@@ -1409,7 +1410,7 @@ class Network:
 
         intersection = [elem.polygon for elem in intersectingLaneGroups]
         intersectingRegion = regions.PolygonalRegion(polygon=shapely.geometry.MultiPolygon(intersection))
-        pointOnRegion = intersectingRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+        pointOnRegion = intersectingRegion.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
         smt_encoding = vector_operation_smt(output_point, "equal", pointOnRegion)
         writeSMTtoFile(smt_file_path, smt_encoding)
         return output_point
@@ -1426,7 +1427,7 @@ class Network:
         if debug:
             writeSMTtoFile(smt_file_path, "crossingAtEncodeSMT")
         point = _toVector(smt_var)
-        output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+        output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, smt_var, debug=debug)
         intersectingRoads = self.findPointInForSMTEncoding(cached_variables['egoVisibleRegion'], self.allRoads)
         assert(intersectingRoads != [])
 
@@ -1436,7 +1437,7 @@ class Network:
 
         intersection = [elem.polygon for elem in intersectingCrossings]
         intersectingRegion = regions.PolygonalRegion(polygon=shapely.geometry.MultiPolygon(intersection))
-        pointOnRegion = intersectingRegion.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+        pointOnRegion = intersectingRegion.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
         smt_encoding = vector_operation_smt(output_point, "equal", pointOnRegion)
         writeSMTtoFile(smt_file_path, smt_encoding)
         return output_point

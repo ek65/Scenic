@@ -270,9 +270,6 @@ class LinearElement(NetworkElement):
     _successor: Union[NetworkElement, None] = None   # going forward
     _predecessor: Union[NetworkElement, None] = None # going backward
 
-    # tolerance for determining whether a point is contained in a class object's polygon region
-    tolerance: 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
-
     @property
     def successor(self):
         return _rejectIfNonexistent(self._successor, 'successor')
@@ -364,9 +361,6 @@ class Road(LinearElement):
     signals: Tuple[Signal]
 
     crossings: Tuple[PedestrianCrossing] = ()    # ordered from start to end
-
-    # tolerance for determining whether a point is contained in a class object's polygon region
-    tolerance: 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
 
     def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug = False):
         if debug:
@@ -559,9 +553,6 @@ class Lane(_ContainsCenterline, LinearElement):
 
     maneuvers: Tuple[Maneuver] = ()     # possible maneuvers upon reaching the end of this lane
 
-    # tolerance for determining whether a point is contained in a class object's polygon region
-    tolerance: 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
-
     def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "roads.py Lane Class")
@@ -607,9 +598,6 @@ class RoadSection(LinearElement):
     forwardLanes: Tuple[LaneSection] = ()   # as above
     backwardLanes: Tuple[LaneSection] = ()  # as above
     lanesByOpenDriveID: Dict[LaneSection]
-
-    # tolerance for determining whether a point is contained in a class object's polygon region
-    tolerance: 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
 
     def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:

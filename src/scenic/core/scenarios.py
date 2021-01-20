@@ -259,6 +259,13 @@ class Scenario:
 					  sampledNamespaces, self.dynamicScenario)
 		return scene, iterations
 
+	def checkRequirements(self):
+		sample = Samplable.sampleAll(self.dependencies)
+		for req in self.initialRequirements:
+			if not req.satisfiedBy(sample):
+				return False
+		return True
+
 	def resetExternalSampler(self):
 		"""Reset the scenario's external sampler, if any.
 

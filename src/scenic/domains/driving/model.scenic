@@ -51,7 +51,7 @@ import numpy as np
 if 'map_options' not in globalParameters:
     param map_options = {}
 
-boston_network = Network.fromPickle('/Users/edwardkim/Desktop/Scenic_Query/Scenic/src/scenic/domains/driving/boston-network.pickle')
+network = Network.fromPickle('/Users/edwardkim/Desktop/Scenic_Query/Scenic/src/scenic/domains/driving/boston-network.pickle')
 
 dataroot = '/Users/edwardkim/Desktop/Scenic_Query/nuscenes_data'
 map_api = NuScenesMap(dataroot=dataroot, map_name='boston-seaport')
@@ -81,11 +81,11 @@ def get_traffic_flow(point):
 
     return heading - np.pi / 2
 
-boston_network.roadDirection = VectorField('roadDirection', get_traffic_flow)
+network.roadDirection = VectorField('roadDirection', get_traffic_flow)
 
 #: The road network being used for the scenario, as a `Network` object.
 # network : Network = Network.fromFile(globalParameters.map, **globalParameters.map_options)
-network: Network = boston_network
+network: Network = network
 
 workspace = DrivingWorkspace(network)
 
@@ -93,7 +93,11 @@ workspace = DrivingWorkspace(network)
 
 #: The union of all drivable roads, including intersections but not shoulders
 #: or parking lanes.
-road : Region = network.drivableRegion
+road : Region = Uniform(*network.roads)
+
+lane : Region = Uniform(*network.lanes)
+
+laneSection : Region = Uniform(*network.lanes)
 
 #: The union of all curbs.
 curb : Region = network.curbRegion
@@ -108,7 +112,7 @@ shoulder : Region = network.shoulderRegion
 roadOrShoulder : Region = road.union(shoulder)
 
 #: The union of all intersections.
-intersection : Region = network.intersectionRegion
+intersection : Region = Uniform(*network.intersections)
 
 #: A :obj:`VectorField` representing the nominal traffic direction at a given point.
 #:
@@ -315,7 +319,7 @@ class Pedestrian(DrivingObject):
         color: The default color is turquoise. Pedestrian colors are not necessarily
             used by simulators, but do appear in the debugging diagram.
     """
-    regionContainedIn: network.walkableRegion
+    regionContainedIn: None
     position: Point on network.walkableRegion
     heading: Range(0, 360) deg
     viewAngle: 90 deg

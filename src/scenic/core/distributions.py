@@ -180,7 +180,7 @@ def findVariableName(smt_file_path, cached_variables, class_name, class_type=Non
 	cached_variables['variables'].append(var_name)
 	return var_name
 
-def checkAndEncodeSMT(smt_file_path, cached_variables, obj, smt_var, debug=False):
+def checkAndEncodeSMT(smt_file_path, cached_variables, obj, debug=False):
 	# checks the type of the obj and encode to smt accordingly
 	# this step can be done in each class, but having this function
 	# saves the trouble of executing the same step, repeatedly
@@ -191,7 +191,7 @@ def checkAndEncodeSMT(smt_file_path, cached_variables, obj, smt_var, debug=False
 	elif isinstance(obj, str):
 		return obj
 	elif isinstance(obj._conditioned, Samplable):
-		return obj._conditioned.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+		return obj._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 	elif isinstance(obj._conditioned, int) or isinstance(obj._conditioned, float):
 		return str(obj)
 	elif isinstance(obj._conditioned, str):
@@ -346,9 +346,11 @@ class Samplable(LazilyEvaluable):
 		"""Sample this value, optionally given some values already sampled."""
 		if subsamples is None:
 			subsamples = DefaultIdentityDict()
+
 		for child in self._conditioned._dependencies:
 			if child not in subsamples:
 				subsamples[child] = child.sample(subsamples)
+
 		return self._conditioned.sampleGiven(subsamples)
 
 	def sampleGiven(self, value):
@@ -361,7 +363,7 @@ class Samplable(LazilyEvaluable):
 
 	def conditionTo(self, value):
 		"""Condition this value to another value with the same conditional distribution."""
-		assert isinstance(value, Samplable)
+		# assert isinstance(value, Samplable)
 		self._conditioned = value
 
 	def evaluateIn(self, context):
@@ -378,6 +380,15 @@ class Samplable(LazilyEvaluable):
 			for line in dep.dependencyTree():
 				l.append('  ' + line)
 		return l
+
+class Constant(Samplable):
+	def __init__(self, value):
+		self._conditioned = value
+		self._dependencies = tuple()
+		self.value = value
+
+	def sampleGiven(self, value):
+		return self.value
 
 class Distribution(Samplable):
 	"""Abstract class for distributions."""
@@ -495,7 +506,7 @@ class TupleDistribution(Distribution, collections.abc.Sequence):
 		self.coordinates = coordinates
 		self.builder = builder
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		raise NotImplementedError
 
 	def __len__(self):
@@ -565,7 +576,7 @@ class FunctionDistribution(Distribution):
 				support.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		   encodeToSMT() must return 'cached_variables' dictionary
@@ -606,7 +617,7 @@ class FunctionDistribution(Distribution):
 			return cacheVarName(cached_variables, self, output)
 
 		elif self.function == geometry.normalizeAngle:
-			angle = checkAndEncodeSMT(smt_file_path, cached_variables, smt_var, self.arguments[0], debug=debug)
+			angle = checkAndEncodeSMT(smt_file_path, cached_variables, self.arguments[0], debug=debug)
 			output = normalizeAngle_SMT(angle)
 			return cacheVarName(cached_variables, self, output)
 
@@ -704,7 +715,7 @@ class StarredDistribution(Distribution):
 		self.lineno = lineno	# for error handling when unpacking fails
 		super().__init__(value, valueType=value.valueType)
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False, encode=True):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Class StarredDistribution encodeToSMT")
 
@@ -716,7 +727,7 @@ class StarredDistribution(Distribution):
 				writeSMTtoFile(smt_file_path, "StarredDistribution already cached")
 			return cached_variables[self]
 
-		return self.value._conditioned.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=encode)	
+		return self.value._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)	
 
 	def sampleGiven(self, value):
 		return value[self.value]
@@ -729,7 +740,7 @@ class StarredDistribution(Distribution):
 
 class MethodDistribution(Distribution):
 	"""Distribution resulting from passing distributions to a method of a fixed object"""
-	def __init__(self, method, obj, args, kwargs, smt_var, valueType=None):
+	def __init__(self, method, obj, args, kwargs, valueType=None):
 		args = tuple(toDistribution(arg) for arg in args)
 		kwargs = { name: toDistribution(arg) for name, arg in kwargs.items() }
 		if valueType is None:
@@ -740,7 +751,7 @@ class MethodDistribution(Distribution):
 		self.arguments = args
 		self.kwargs = kwargs
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		   encodeToSMT() must return 'cached_variables' dictionary
@@ -766,15 +777,14 @@ class MethodDistribution(Distribution):
 			return cached_variables[self]
 
 		import scenic.domains.driving.roads as roads
+		import scenic.core.vectors as vectors
 		obj = None
-		if isConditioned(self.object) and isinstance(self.object, Samplable):
+		if isinstance(self.object, Samplable) and isConditioned(self.object):
 			obj = self.object._conditioned
 		elif isinstance(self.object, Options):
-			obj = self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=False)
-		elif isinstance(self.object, roads.NetworkElement):
-			obj = self.object
+			obj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
 		else:
-			raise NotImplementedError
+			obj = self.object
 		
 		output = None
 		if self.method == roads.Network.findPointIn:
@@ -817,6 +827,13 @@ class MethodDistribution(Distribution):
 			assert(len(self.arguments)==1)
 			point = self.arguments[0]
 			output = obj.intersectionAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+
+		elif self.method == vectors.VectorField.__getitem__:
+			# print("MethodDist self.arguments: ", self.arguments)
+			# print("self.arguments[0]._conditioned: ", self.arguments[0]._conditioned)
+			assert(len(self.arguments)==1 and isConditioned(self.arguments[0]))
+			heading = self.sample()
+			output = str(heading)
 
 		else:
 			raise NotImplementedError
@@ -888,7 +905,7 @@ class AttributeDistribution(Distribution):
 		self.attribute = attribute
 		self.object = obj
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False, encode=True):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Class AttributeDistribution encodeToSMT")
 
@@ -904,15 +921,15 @@ class AttributeDistribution(Distribution):
 		if encode:
 			if isinstance(self.object, Point):
 				return getattr(self.object._conditioned, self.attribute).encodeToSMT(smt_file_path, 
-										cached_variables, smt_var, debug=debug)
+										cached_variables, debug=debug)
 
 			elif isinstance(self.object, Options):
 				if self.object.checkOptionsType(roads.NetworkElement):
-					return self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=encode)
+					return self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 				else: 
 					raise NotImplementedError
 			elif isinstance(self.object, UniformDistribution):
-				return self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=encode)
+				return self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 			else:
 				if debug:
 					writeSMTtoFile("NEW CASE: ", type(self.object._conditioned))
@@ -921,7 +938,7 @@ class AttributeDistribution(Distribution):
 		else:
 			if isinstance(self.object, Options):
 				if self.object.checkOptionsType(roads.NetworkElement):
-					networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=encode)
+					networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 					if networkObj is None :
 						return None
 
@@ -939,7 +956,7 @@ class AttributeDistribution(Distribution):
 					raise NotImplementedError
 
 			elif isinstance(self.object, UniformDistribution):
-				networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=encode)
+				networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 				if networkObj is None :
 					return None
 
@@ -1015,7 +1032,7 @@ class OperatorDistribution(Distribution):
 				op._conditioned.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		   encodeToSMT() must return 'cached_variables' dictionary
@@ -1028,9 +1045,11 @@ class OperatorDistribution(Distribution):
 			writeSMTtoFile(smt_file_path, "type(object): "+str(type(self.object._conditioned)))
 			# writeSMTtoFile(smt_file_path, "operands: "+str(self.operands))
 			for op in self.operands:
-				writeSMTtoFile(smt_file_path, "type(operand): "+str(type(op._conditioned)))
+				writeSMTtoFile(smt_file_path, "type(operand): "+str(type(op)))
 
 		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
+			if debug:
+				writeSMTtoFile(smt_file_path, "OperatorDist is conditioned")
 			return cacheVarName(cached_variables, self, self._conditioned)
 
 		if self in cached_variables.keys():
@@ -1043,10 +1062,10 @@ class OperatorDistribution(Distribution):
 		if self.operator in ['__add__', '__radd__' , '__sub__', '__rsub__', '__truediv__', '__rtruediv__', '__mul__', '__rmul__',\
 			'__floordiv__', '__rfloordiv__','__mod__', '__rmod__','__divmod__', '__rdivmod__','__pow__', '__rpow__']:
 
-			obj_var = self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+			obj_var = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 			assert(len(self.operands) < 2)
 			operand = self.operands[0]
-			operand_smt = checkAndEncodeSMT(smt_file_path, cached_variables, operand, smt_var, debug=debug)
+			operand_smt = checkAndEncodeSMT(smt_file_path, cached_variables, operand, debug=debug)
 
 			if self.operator == '__add__' or self.operator == '__radd__':
 				summation = smt_add(obj_var, operand_smt)
@@ -1086,7 +1105,22 @@ class OperatorDistribution(Distribution):
 			writeSMTtoFile(smt_file_path, smt_encoding)
 
 		elif self.operator == '__call__':
-			raise NotImplementedError
+			if isinstance(self.object, AttributeDistribution) and self.object.attribute == 'intersect' and \
+				isinstance(self.object.object, Options):
+				optionsDist = self.object.object
+				possibleRegions = list(optionsDist.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False).options)
+				assert(len(self.operands)==1)
+				possibleRegions.append(self.operands[0])
+				print("len(possibleRegions): ", len(possibleRegions))
+
+				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+				outputPt = (x,y)
+
+				for region in possibleRegions:
+					region.encodeToSMT(smt_file_path, cached_variables, outputPt, debug=debug)
+
+				cacheVarName(cached_variables, self, outputPt)
 
 		elif self.operator == '__getitem__':
 			import scenic.core.vectors as vectors
@@ -1099,17 +1133,27 @@ class OperatorDistribution(Distribution):
 					writeSMTtoFile(smt_file_path, "OperatorDistribution self.operator == __getitem__")
 
 				# all 'encode=False' flag outputs Options class 
-				optionsRegion = self.object.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=False)
+				optionsRegion = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
+
+				if len(self.operands)==1 and isConditioned(self.operands[0]):
+					heading = self.sample()
+					return cacheVarName(cached_variables, self, str(heading))
 
 				if debug:
 					writeSMTtoFile(smt_file_path, "operatordist optionRegion: "+str(optionsRegion))
 
+				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+				smt_var = (x,y)
+
 				for reg in optionsRegion.options:
-					reg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+					reg_point = reg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+					(x_cond, y_cond) = vector_operation_smt(reg_point, "equal", smt_var)
+					writeSMTtoFile(smt_file_path, smt_assert(None, smt_and(x_cond, y_cond)))
 
 				heading_var = output
 				elems = optionsRegion.options
-				self.encodeHeading(elems, smt_file_path, smt_var, heading_var, debug=debug)
+				self.encodeHeading(elems, smt_file_path, (x,y) , heading_var, debug=debug)
 
 			else:
 				raise NotImplementedError
@@ -1143,8 +1187,8 @@ class OperatorDistribution(Distribution):
 					prevRightPt = elem.rightEdge.points[0]
 					prevCenterPt = centerlinePts[0]
 
-				[x1,y1] = prevCenterPt
-				[x2,y2] = centerlinePts[i+1]
+				[x1,y1] = [prevCenterPt.x, prevCenterPt.y]
+				[x2,y2] = [centerlinePts[i+1].x, centerlinePts[i+1].y]
 				slope = float(y2-y1)/float(x2-x1)
 
 				if abs(slope) > 20:
@@ -1396,7 +1440,7 @@ class Range(Distribution):
 			self.high.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		"""
 			smt_file_path must be an absolute path, not relative to a root of non-home folder
 			to avoid duplicate variable names, check for variable existence in cached_variables dict:
@@ -1413,9 +1457,9 @@ class Range(Distribution):
 				writeSMTtoFile(smt_file_path, "Range already cached")
 			return cached_variables[self]
 
-		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, smt_var, debug=debug)
-		high = checkAndEncodeSMT(smt_file_path, cached_variables, self.high, smt_var, debug=debug)
-		var_name = findVariableName(smt_file_path, cached_variables, 'range', smt_var, debug=debug)
+		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, debug=debug)
+		high = checkAndEncodeSMT(smt_file_path, cached_variables, self.high, debug=debug)
+		var_name = findVariableName(smt_file_path, cached_variables, 'range', debug=debug)
 
 		lower_bound = smt_lessThanEq(low, var_name)
 		upper_bound = smt_lessThanEq(var_name, high)
@@ -1477,7 +1521,7 @@ class Normal(Distribution):
 			self.stddev.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		"""
@@ -1578,7 +1622,7 @@ class TruncatedNormal(Normal):
 			self.high.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		"""
@@ -1594,8 +1638,8 @@ class TruncatedNormal(Normal):
 				writeSMTtoFile(smt_file_path, "TruncatedNormal already cached")
 			return cached_variables[self]
 
-		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, smt_var, debug=debug)
-		high = checkAndEncodeSMT(smt_file_path, cached_variables, self.high, smt_var, debug=debug)
+		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, debug=debug)
+		high = checkAndEncodeSMT(smt_file_path, cached_variables, self.high, debug=debug)
 		var_name = findVariableName(smt_file_path, cached_variables, 'truncated_normal', debug=debug)
 
 		lower_bound = smt_lessThanEq(low, var_name)
@@ -1694,7 +1738,7 @@ class DiscreteRange(Distribution):
 			self.high.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		"""
@@ -1709,8 +1753,8 @@ class DiscreteRange(Distribution):
 				writeSMTtoFile(smt_file_path, "DiscreteRange is already cached")
 			return cached_variables[self]
 
-		low = checkAndEncodeSMT(smt_file_path, cached_variables, smt_var, self.low, debug=debug)
-		high = checkAndEncodeSMT(smt_file_path, cached_variables, smt_var, self.high, debug=debug)
+		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, debug=debug)
+		high = checkAndEncodeSMT(smt_file_path, cached_variables, self.high, debug=debug)
 		var_name = findVariableName(smt_file_path, cached_variables, 'discrete_range', "Int", debug=debug)
 
 		lower_bound = smt_lessThanEq(low, var_name)
@@ -1777,9 +1821,11 @@ class Options(MultiplexerDistribution):
 				break
 		return output_bool
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False, encode=True):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False, encode=True):
 		if debug:
 			writeSMTtoFile(smt_file_path, "Options class")
+			if isConditioned(self):
+				writeSMTtoFile(smt_file_path, str(self._conditioned))
 
 		if encode and self in cached_variables.keys():
 			return cached_variables[self]
@@ -1789,7 +1835,6 @@ class Options(MultiplexerDistribution):
 
 		if encode:
 			if self.checkOptionsType(roads.NetworkElement):
-				assert(isinstance(smt_var, tuple) and len(smt_var)==2)
 
 				valid_options = []
 				egoSectorPolygon = cached_variables['egoVisibleRegion'].polygon
@@ -1826,6 +1871,11 @@ class Options(MultiplexerDistribution):
 				import scenic.core.regions as regions
 				import shapely.geometry.multipolygon as multipolygon
 
+				if smt_var is None:
+					x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+					y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+					smt_var = (x,y)
+
 				polygonalRegions = [regions.regionFromShapelyObject(elem.polygon) for elem in valid_options.options]
 				for polygonReg in polygonalRegions:
 					polygonReg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
@@ -1833,9 +1883,10 @@ class Options(MultiplexerDistribution):
 				return cacheVarName(cached_variables, self, smt_var)
 
 			elif self.checkOptionsType(class_type = float) or self.checkOptionsType(class_type = int):
-				assert(isinstance(smt_var, str))
 				cumulative_smt_encoding = None
 				count = 0
+				smt_var = findVariableName(smt_file_path, cached_variables, 'options', debug=debug)
+
 				for opt in self.options:
 					smt_encoding = smt_equal(smt_var, str(opt))
 					if count == 0:
@@ -1969,7 +2020,7 @@ class UniformDistribution(Distribution):
 				break
 		return output_bool
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False, encode = True):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode = True):
 		if debug:
 			writeSMTtoFile(smt_file_path, "class UniformDistribution encodeToSMT")
 
@@ -1985,7 +2036,7 @@ class UniformDistribution(Distribution):
 		import scenic.domains.driving.roads as roads
 		if self.checkOptionsType(roads.NetworkElement):
 			if not isConditioned(self):
-				options = self.options[0].encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=False)
+				options = self.options[0].encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
 				if options is None:
 					return None
 				self._conditioned = Options(options)

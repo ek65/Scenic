@@ -694,9 +694,6 @@ class LaneSection(_ContainsCenterline, LinearElement):
     #: Slower adjacent lane of same type, if any.
     _slowerLane: Union[LaneSection, None] = None
 
-    # tolerance for determining whether a point is contained in a class object's polygon region
-    tolerance: float = 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
-
     def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
             writeSMTtoFile(smt_file_path, "roads.py Class LaneSection encodeToSMT")
@@ -752,8 +749,6 @@ class Sidewalk(_ContainsCenterline, LinearElement):
     """
     road: Road
     crossings: Tuple[PedestrianCrossing]
-    # tolerance for determining whether a point is contained in a class object's polygon region
-    tolerance: float = 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
 
     def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
@@ -800,8 +795,6 @@ class Intersection(NetworkElement):
     signals: Tuple[Signal]
 
     crossings: Tuple[PedestrianCrossing]    # also ordered to preserve adjacency
-    # tolerance for determining whether a point is contained in a class object's polygon region
-    tolerance: 3.0 # meters -- usual lane width is 12ft (= 3.56 meters)
 
     def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:

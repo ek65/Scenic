@@ -328,6 +328,7 @@ class Samplable(LazilyEvaluable):
 		super().__init__(props)
 		self._dependencies = tuple(deps)	# fixed order for reproducibility
 		self._conditioned = self	# version (partially) conditioned on requirements
+		self.samplesRegion = False
 
 	@staticmethod
 	def sampleAll(quantities):
@@ -1869,16 +1870,32 @@ class Options(MultiplexerDistribution):
 					valid_options = self._conditioned
 
 				import scenic.core.regions as regions
-				import shapely.geometry.multipolygon as multipolygon
+				import shapely.geometry
 
 				if smt_var is None:
 					x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
 					y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 					smt_var = (x,y)
 
-				polygonalRegions = [regions.regionFromShapelyObject(elem.polygon) for elem in valid_options.options]
-				for polygonReg in polygonalRegions:
-					polygonReg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+				polygonalRegions = []
+				for elem in valid_options.options:
+					if isinstance(elem.polygon, shapely.geometry.multipolygon.MultiPolygon):
+						for geom in elem.polygon.geoms:
+							polygonalRegions.append(geom)
+					elif isinstance(elem.polygon, shapely.geometry.polygon.Polygon):
+						polygonalRegions.append(elem.polygon)
+					else:
+						print("elem: ", elem)
+						raise NotImplementedError
+
+				print("in Options class, polygonalRegions: ", polygonalRegions)
+				multipolygon = shapely.geometry.multipolygon.MultiPolygon(polygonalRegions)
+				polygonReg = regions.regionFromShapelyObject(multipolygon)
+				polygonReg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+
+				# polygonalRegions = [regions.regionFromShapelyObject(elem.polygon) for elem in valid_options.options]
+				# for polygonReg in polygonalRegions:
+				# 	polygonReg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
 				
 				return cacheVarName(cached_variables, self, smt_var)
 
@@ -2015,6 +2032,10 @@ class UniformDistribution(Distribution):
 	def checkOptionsType(self, class_type):
 		output_bool = True
 		for opt in self.options:
+			sample = opt.sample()
+			if isinstance(sample,tuple) and not isinstance(sample, class_type):
+				output_bool = False
+				break
 			if not isinstance(opt.sample(), class_type):
 				output_bool = False
 				break
@@ -2034,18 +2055,16 @@ class UniformDistribution(Distribution):
 			raise NotImplementedError
 
 		import scenic.domains.driving.roads as roads
-		if self.checkOptionsType(roads.NetworkElement):
-			if not isConditioned(self):
-				options = self.options[0].encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
-				if options is None:
-					return None
-				self._conditioned = Options(options)
-				return self._conditioned
-			else:
-				return self._conditioned
+		if not isConditioned(self):
+			options = self.options[0].encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
+			print("options: ", options)
+			print("options[0]: ", options[0])
+			if options is None:
+				return None
+			self._conditioned = Options(options)
+			return self._conditioned
 		else:
-			raise NotImplementedError
-
+			return self._conditioned
 		return None
 
 	def conditionforSMT(self, condition, conditioned_bool):

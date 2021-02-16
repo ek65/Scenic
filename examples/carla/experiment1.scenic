@@ -7,6 +7,6 @@ param map = localPath('../../tests/formats/opendrive/maps/CARLA/Town05.xodr')
 param carla_map = 'Town05'
 model scenic.domains.driving.model
 
-ego = Car on road
-ped = Pedestrian on visible Uniform(*network.intersections, *network.roads)
+ego = Car on road, facing Range(-15,15) deg relative to roadDirection
+ped = Pedestrian on Uniform(*network.intersections, *network.roads), facing Range(0,360) deg
 require abs(ego.heading relative to ped.heading) > 80 deg

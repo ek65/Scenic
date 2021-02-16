@@ -277,7 +277,7 @@ class NuscQueryAPI:
 
 			heading = np.arctan2(traffic_flow_vec[1], traffic_flow_vec[0])
 
-			return heading - np.pi / 2
+			return heading + np.pi / 2
 
 		retval['traffic_flow'] = get_traffic_flow
 

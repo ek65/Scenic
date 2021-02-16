@@ -74,6 +74,7 @@ class Scenario:
 			if obj is not egoObject:
 				ordered.append(obj)
 		self.objects = (egoObject,) + tuple(ordered) if egoObject else tuple(ordered)
+		self.original_objects = objects
 		self.egoObject = egoObject
 		self.params = dict(params)
 		self.externalParams = tuple(externalParams)
@@ -283,205 +284,88 @@ class Scenario:
 		finally:
 			veneer._globalParameters = {}
 
-	# a function to traverse the expression tree
-	def traverse(self, obj, depList, featureList):
-	    # Input: type(depList) := set
-	    depList.add(obj)
-	    if (obj._dependencies is None) or (obj in featureList):
-	        return depList
-	    for dep in obj._dependencies:
-	        if isinstance(dep._conditioned, Samplable):
-	            depList = self.traverse(dep, depList, featureList)
-	    return depList
-
-	def conditionPosForDepAnalysis(self, obj, depth=0):
-	    """Limitation: Technically, Options of network element is also an intermediate variable
-	    However, we are optimizing here to avoid having too many objs sharing the same intermediate var
-	    to prevent joint smt translation"""
+	## Dependency Analysis
+	def cacheDependencies(self, obj, depSet=None):
+		if depSet is None:
+			depSet = set()
 	    
-	    if depth==0:
-	        obj._conditionTo(0.0)
-	    
-	    if (obj._dependencies is None):
-	        return None
+		depSet.add(obj)
+		if not isinstance(obj._conditioned, Samplable):
+			return depSet
 
-	    from scenic.domains.driving.roads import NetworkElement
-	    if isinstance(obj._conditioned, Options) and isinstance(obj.options[0], NetworkElement):
-	#         print("obj to be conditioned: ",obj._conditioned)
-	        obj.conditionTo(0.0)
-	        return None
-	    
-	    for dep in obj._dependencies:
-	        if isinstance(dep._conditioned, Samplable):
-	            self.conditionPosForDepAnalysis(dep, depth+1) 
-	    return None
+		for dep in obj._conditioned._dependencies:
+			if isinstance(dep._conditioned, Samplable):
+				depSet = self.cacheDependencies(dep, depSet)
 
-	def resetConditionedVar(self, obj):
-	    obj._conditioned = obj
-	    if (obj._dependencies is None):
-	        return None
-	    
-	    for dep in obj._dependencies:
-	        self.resetConditionedVar(dep)
-	    return None
+		return depSet
 
-	def resetConditionedObj(self):
-	    for obj in self.objects:
-	        self.resetConditionedVar(obj.position)
-	        self.resetConditionedVar(obj.heading)
+	def addToFeatureDict(self, feature, featureDict, name):
+		featureDict[name] = {}
+		featureDict[name]['cachedDep'] = self.cacheDependencies(feature)
+		featureDict[name]['dependent_features'] = set()
+		featureDict[name]['jointly_dependent_features'] = set()
+		featureDict[name]['feature'] = feature
+		return featureDict
 
-	def extractObjDependencies(self, objDep):
-	    # Input: type(objDep) := dictionary
-	    # Output: objDep := key: obj, value: not feature dependent dependencies
-	    # this non-feature dependence is to analyze for intermediate var dependence analysis
-	    
-	    featureList = set()
-	    for obj in self.objects:
-	        posDep = set()
-	        headingDep = set()
-	        objDep[obj] = {}
+	def dependencyAnalysis(self, debug=False):
+	## TODO: also account for out of order object specification in the program
 
-	        # TODO: need to generalize following conditions to all attributes
-	        objDep[obj]['position'] = self.traverse(obj.position, posDep, featureList)
-	        featureList.add(obj.position)
-	        self.conditionPosForDepAnalysis(obj.position)
+		# cache features' dependencies
+		featureDict = {}
+		cached_featureList = []
+		for i in range(len(self.objects)):
+			obj = self.objects[i]
+			obj_name = 'obj'+str(i)
+			obj_pos = obj_name+'_position'
+			obj_heading = obj_name+'_heading'
+			pos_feature = obj.position
+			heading_feature = obj.heading
+			cached_featureList.extend([obj_pos, obj_heading])
+			self.addToFeatureDict(pos_feature, featureDict, obj_pos)
+			self.addToFeatureDict(heading_feature,  featureDict, obj_heading)
+			pos_feature._conditioned = 0
+			heading_feature._conditioned = 0
+            
+		for i in range(len(cached_featureList)):
+			for j in range(len(cached_featureList)):
+				if i >= j: # same feature or already checked
+					continue
+				else:
+					feature1 = cached_featureList[i]
+					feature2 = cached_featureList[j]
+					feature1_dict = featureDict[feature1]
+					feature2_dict = featureDict[feature2]
 
-	        objDep[obj]['heading'] = self.traverse(obj.heading, headingDep, featureList)
-	        featureList.add(obj.heading)
-	        obj.heading.conditionTo(0.0)
-	    return objDep
+					feature1_cacheDep = feature1_dict['cachedDep']
+					feature2_cacheDep = feature2_dict['cachedDep']
+					shared_dependencies = feature1_cacheDep.intersection(feature2_cacheDep)
+		            
+					if len(shared_dependencies) > 0:
+						# two features cannot be both dependent and jointly dependent
+						if featureDict[feature1]['feature'] in shared_dependencies:
+							featureDict[feature2]['dependent_features'].add(feature1)
+						elif featureDict[feature2]['feature'] in shared_dependencies:
+							featureDict[feature1]['dependent_features'].add(feature2)
+						else:
+							featureDict[feature1]['jointly_dependent_features'].add(feature2)
 
-	def findObjByValue(self, dictionary, value):
-	    for key in dictionary.keys():
-	        if value in dictionary[key]:
-	            return key
-	    return None
+		dependencyOrder = []
+		already_checked = set()
+		for feature in cached_featureList:
+			if feature not in already_checked:
+				jointlyDependentFeatures = []
+				for joint_feature in featureDict[feature]['jointly_dependent_features']:
+					if joint_feature not in already_checked:
+						jointlyDependentFeatures.append(joint_feature)
+				jointlyDependentFeatures.append(feature)
+				if debug:
+					dependencyOrder.append(jointlyDependentFeatures)
+				else:
+					jointFeatures = []
+					for feature_name in jointlyDependentFeatures:
+						jointFeatures.append(featureDict[feature_name]['feature'])
+					dependencyOrder.append(jointFeatures)
 
-	def analyzeDependencies(self, objDep, debug=False):
-	    objects = self.objects
-	    feature_list = set()
-	    obj_feature_dict = {}
-	    
-	    count = 0
-	    for obj in objects:
-	        objDep[obj]['dependent_objs'] = set()
-	        objDep[obj]['jointly_dependent'] = set()
-	        objDep[obj]['self'] = 'obj'+str(count)
-	        objDep['obj'+str(count)] = obj
-	        objDep[obj]['dependent_objs_str'] = set()
-	        objDep[obj]['jointly_dependent_str'] = set()
-	        
-	        # TODO: generalize to add any features of users interest
-	        feature_list.update([obj.position, obj.heading])
-	        obj_feature_dict[obj] = set([obj.position, obj.heading])
-	        count+=1
-	    
-	    for i in range(len(objects)):
-	        for j in range(len(objects)-(i+1)):
-	            obj1 = objects[i]
-	            obj2 = objects[j+i+1]
-	            obj1_str = 'obj'+str(i)
-	            obj2_str = 'obj'+str(j+i+1)
-	            obj1_index = i
-	            obj2_index = j+i+1
-	            
-	            obj1_pos = objDep[obj1]['position']
-	            obj2_pos = objDep[obj2]['position']
-	            
-	            intersection_elem = obj1_pos.intersection(obj2_pos)
-	            
-	            if len(intersection_elem) >= 1:
-	                # TODO: need to generalize following conditions to all attributes
-	                if ((obj1.position in intersection_elem) and not (obj1.position is obj2.position)) \
-	                    or ((obj1.heading in intersection_elem) and not (obj1.heading is obj2.heading)):
-	                    objDep[obj2]['dependent_objs'].add(obj1)
-	                    if debug:
-	                        objDep[obj2]['dependent_objs_str'].add(objDep[obj1]['self'])
-	                elif ((obj2.position in intersection_elem) and not (obj2.position is obj1.position))\
-	                    or ((obj2.heading in intersection_elem) and not (obj2.heading is obj1.heading)):
-	                    objDep[obj1]['dependent_objs'].add(obj2)
-	                    if debug:
-	                        objDep[obj1]['dependent_objs_str'].add(objDep[obj2]['self'])
-	                elif len(feature_list.intersection(intersection_elem))==len(intersection_elem):
-	                    for feature in feature_list.intersection(intersection_elem):
-	                        if not (feature in obj_feature_dict[obj1]):
-	                            objToAdd = self.findObjByValue(obj_feature_dict, feature)
-	                            objDep[obj1]['dependent_objs'].add(objToAdd)
-	                            if debug:
-	                                objDep[obj1]['dependent_objs_str'].add(objDep[objToAdd]['self'])
-	                        if not (feature in obj_feature_dict[obj2]):
-	                            objToAdd = self.findObjByValue(obj_feature_dict, feature)
-	                            objDep[obj2]['dependent_objs'].add(objToAdd)
-	                            if debug:
-	                                objDep[obj2]['dependent_objs_str'].add(objDep[objToAdd]['self'])
-	                else:
-	                    objDep[obj1]['jointly_dependent'].add(obj2)
-	                    objDep[obj2]['jointly_dependent'].add(obj1)
-	                    if debug:
-	                        objDep[obj1]['jointly_dependent_str'].add(objDep[obj2]['self'])
-	                        objDep[obj2]['jointly_dependent_str'].add(objDep[obj1]['self'])
-	    return objDep
-	            
-	    
-	def findObj(self, output_list, obj, objDep, debug = False):
-	    # returns the index where the obj is located in output_list
-	    index = 0
-	    if debug:
-	        obj = objDep[obj]['self']
-	    for elem in output_list:
-	        if obj in elem:
-	            return index
-	        index += 1
-	    return None
-	        
-	    
-	def computeObjsDependencyOrder(self, objDep, debug = False):
-	    objects = self.objects
-	    output = []
-	    count = 0
-	    for obj in objects:
-	        if debug:
-	            jointlyDependentObj = objDep[obj]['jointly_dependent_str']
-	        else:
-	            jointlyDependentObj = objDep[obj]['jointly_dependent']
-	        index = self.findObj(output, obj, objDep, debug)
-	        if index == None:
-	            jointObjs = set()
-	            output.append(jointObjs)
-	        else:
-	            jointObjs = output[index]
-	        
-	        if debug:
-	            jointObjs.add(objDep[obj]['self'])
-	        else:
-	            jointObjs.add(obj)
-	        
-	        if len(jointlyDependentObj) != len(jointObjs.intersection(jointlyDependentObj)):
-	            for elem in jointlyDependentObj:
-	                if elem not in jointObjs:
-	                    jointObjs.add(elem)
-	        count += 1
-	        
-	    # shuffle the output to abide by the dependency relation
-	    count = 0
-	    for obj in objects:
-	        obj_index = self.findObj(output, obj, objDep, debug)
-	        if debug:
-	            dependentObj = objDep[obj]['dependent_objs_str']
-	            print("obj : ", objDep[obj]['self'])
-	        else:
-	            dependentObj = objDep[obj]['dependent_objs']
-	        
-	        for elem in dependentObj:
-	            if debug:
-	                dep_index = self.findObj(output, objDep[elem], objDep, debug)
-	                print("elem: ", elem)
-	                print("output: ", output)
-	            else:
-	                dep_index = self.findObj(output, obj, objDep, debug)
-	            
-	            if dep_index > obj_index:
-	                insert_index = 0 if obj_index == 0 else obj_index-1
-	                output.insert(insert_index, output.pop(dep_index))
-	        count += 1
-	    return output
+				for f in jointlyDependentFeatures: # to avoid double counting features
+					already_checked.add(f)
+		return dependencyOrder

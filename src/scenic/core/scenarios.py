@@ -157,6 +157,109 @@ class Scenario:
 			return False
 		return True
 
+	def generateForQuery(self, maxIterations=2000, verbosity=0, feedback=None):
+		"""Sample a `Scene` from this scenario.
+
+		Args:
+			maxIterations (int): Maximum number of rejection sampling iterations.
+			verbosity (int): Verbosity level.
+			feedback (float): Feedback to pass to external samplers doing active sampling.
+				See :mod:`scenic.core.external_params`.
+
+		Returns:
+			A pair with the sampled `Scene` and the number of iterations used.
+
+		Raises:
+			`RejectionException`: if no valid sample is found in **maxIterations** iterations.
+		"""
+		objects = self.original_objects
+
+		# choose which custom requirements will be enforced for this sample
+		activeReqs = [req for req in self.initialRequirements if random.random() <= req.prob]
+
+		# do rejection sampling until requirements are satisfied
+		rejection = True
+		iterations = 0
+		while rejection is not None:
+			if iterations > 0:	# rejected the last sample
+				if verbosity >= 2:
+					print(f'  Rejected sample {iterations} because of: {rejection}')
+				if self.externalSampler is not None:
+					feedback = self.externalSampler.rejectionFeedback
+			if iterations >= maxIterations:
+				raise RejectionException(f'failed to generate scenario in {iterations} iterations')
+			iterations += 1
+			try:
+				if self.externalSampler is not None:
+					self.externalSampler.sample(feedback)
+				sample = Samplable.sampleAll(self.dependencies)
+			except RejectionException as e:
+				rejection = e
+				continue
+			rejection = None
+			ego = sample[self.egoObject]
+			# Normalize types of some built-in properties
+			for obj in objects:
+				sampledObj = sample[obj]
+				assert not needsSampling(sampledObj)
+				# position, heading
+				assert isinstance(sampledObj.position, Vector)
+				sampledObj.heading = float(sampledObj.heading)
+				# behavior
+				behavior = sampledObj.behavior
+				if behavior is not None and not isinstance(behavior, veneer.Behavior):
+					raise InvalidScenarioError(
+						f'behavior {behavior} of Object {obj} is not a behavior')
+
+			# Check built-in requirements
+			for i in range(len(objects)):
+				vi = sample[objects[i]]
+				# Require object to be contained in the workspace/valid region
+				container = self.containerOfObject(vi)
+				if not container.containsObject(vi):
+					rejection = 'object containment'
+					break
+				# Require object to be visible from the ego object
+				if vi.requireVisible and vi is not ego and not ego.canSee(vi):
+					rejection = 'object visibility'
+					break
+				# Require object to not intersect another object
+				for j in range(i):
+					vj = sample[objects[j]]
+					if vi.intersects(vj):
+						rejection = 'object intersection'
+						break
+				if rejection is not None:
+					break
+			if rejection is not None:
+				continue
+			# Check user-specified requirements
+			for req in activeReqs:
+				if not req.satisfiedBy(sample):
+					rejection = f'user-specified requirement (line {req.line})'
+					break
+
+		# obtained a valid sample; assemble a scene from it
+		sampledObjects = tuple(sample[obj] for obj in objects)
+		sampledParams = {}
+		for param, value in self.params.items():
+			sampledValue = sample[value]
+			assert not needsLazyEvaluation(sampledValue)
+			sampledParams[param] = sampledValue
+		sampledNamespaces = {}
+		for modName, namespace in self.behaviorNamespaces.items():
+			sampledNamespace = { name: sample[value] for name, value in namespace.items() }
+			sampledNamespaces[modName] = (namespace, sampledNamespace, namespace.copy())
+		alwaysReqs = (veneer.BoundRequirement(req, sample) for req in self.alwaysRequirements)
+		terminationConds = (veneer.BoundRequirement(req, sample)
+							for req in self.terminationConditions)
+		termSimulationConds = (veneer.BoundRequirement(req, sample)
+							   for req in self.terminateSimulationConditions)
+		scene = Scene(self.workspace, sampledObjects, ego, sampledParams,
+					  alwaysReqs, terminationConds, termSimulationConds, self.monitors,
+					  sampledNamespaces, self.dynamicScenario)
+		return scene, iterations
+
 	def generate(self, maxIterations=2000, verbosity=0, feedback=None):
 		"""Sample a `Scene` from this scenario.
 

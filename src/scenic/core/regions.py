@@ -288,12 +288,12 @@ class PointInRegionDistribution(VectorDistribution):
 		else:
 			region = self.region
 
-		if isinstance(self._conditioned, tuple):
+		if isinstance(self._conditioned, Vector):
 			if debug:
 				writeSMTtoFile(smt_file_path, "PointInRegionDistribution is conditioned : " + str(self._conditioned))
-			(x, y) = self._conditioned
-			output_var = (str(x), str(y))
-			return cacheVarName(cached_variables, self, output_var)
+			vector = self._conditioned
+			smt_var = (str(vector.x), str(vector.y))
+			return cacheVarName(cached_variables, self, smt_var)
 
 		elif isinstance(region, UniformDistribution):
 			possibleRegions = region.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)

@@ -141,7 +141,7 @@ def vector_operation_smt(vector1, operation, vector2):
 
 	return (x, y)
 
-def normalizeAngle_SMT(original_angle, debug=False):
+def normalizeAngle_SMT(smt_file_path, cached_variables, original_angle, debug=False):
 	angle = findVariableName(smt_file_path, cached_variables, 'angle', debug=debug)
 	ite1 = smt_assert("equal", angle , smt_ite(smt_lessThan("0", original_angle), \
 		smt_mod(original_angle, "6.2832"), original_angle))
@@ -189,6 +189,8 @@ def checkAndEncodeSMT(smt_file_path, cached_variables, obj, debug=False):
 	elif isinstance(obj, int) or isinstance(obj, float):
 		return str(obj)
 	elif isinstance(obj, str):
+		return obj
+	elif isinstance(obj, tuple):
 		return obj
 	elif isinstance(obj._conditioned, Samplable):
 		return obj._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
@@ -619,7 +621,7 @@ class FunctionDistribution(Distribution):
 
 		elif self.function == geometry.normalizeAngle:
 			angle = checkAndEncodeSMT(smt_file_path, cached_variables, self.arguments[0], debug=debug)
-			output = normalizeAngle_SMT(angle)
+			output = normalizeAngle_SMT(smt_file_path, cached_variables, angle)
 			return cacheVarName(cached_variables, self, output)
 
 		# Issue: How to recover the road class from the function
@@ -1116,12 +1118,10 @@ class OperatorDistribution(Distribution):
 
 				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
 				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
-				outputPt = (x,y)
+				output = (x,y)
 
 				for region in possibleRegions:
-					region.encodeToSMT(smt_file_path, cached_variables, outputPt, debug=debug)
-
-				cacheVarName(cached_variables, self, outputPt)
+					region.encodeToSMT(smt_file_path, cached_variables, output, debug=debug)
 
 		elif self.operator == '__getitem__':
 			import scenic.core.vectors as vectors
@@ -1154,11 +1154,21 @@ class OperatorDistribution(Distribution):
 
 				heading_var = output
 				elems = optionsRegion.options
-				self.encodeHeading(elems, smt_file_path, (x,y) , heading_var, debug=debug)
+				self.encodeHeading(elems, smt_file_path, (x,y), heading_var, debug=debug)
 
 			else:
 				raise NotImplementedError
+
+		elif self.operator == 'angleTo':
+			import scenic.core.vectors as vectors
+			self_vector_smt = self.object.encodeToSMT(smt_file_path, cached_variables, debug)
+			other_vector_smt= self.operands[0].encodeToSMT(smt_file_path, cached_variables, debug)
+			self_vector = vectors.Vector(self_vector_smt[0], self_vector_smt[1])
+			other_vector = vectors.Vector(other_vector_smt[0], other_vector_smt[1])
+			output = self_vector.angleToEncodeSMT(smt_file_path, cached_variables, other_vector_smt, debug)
+
 		else:
+			print("self.operator: " + str(self.operator))
 			if debug:
 				writeSMTtoFile(smt_file_path, "self.operator: " + str(self.operator))
 			raise NotImplementedError

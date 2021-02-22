@@ -55,6 +55,7 @@ workspace = DrivingWorkspace(network)
 #: The union of all drivable roads, including intersections but not shoulders
 #: or parking lanes.
 road : Region = Uniform(*network.roads)
+roadRegion : Region = network.roadRegion
 
 #: The union of all curbs.
 curb : Region = network.curbRegion

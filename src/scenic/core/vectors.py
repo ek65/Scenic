@@ -472,7 +472,7 @@ class Vector(Samplable, collections.abc.Sequence):
 		dy = smt_assert("subtract", other_y, vec_y)
 		smt_atan = "(arctan "+smt_divide(dy, dx)+")" 
 		subtraction = smt_subtract(smt_atan, smt_divide('3.1416','2'))
-		theta = normalizeAngle_SMT(subtraction, debug=debug)
+		theta = normalizeAngle_SMT(smt_file_path, cached_variables, subtraction, debug=debug)
 		return theta
 
 	@scalarOperator
@@ -495,7 +495,7 @@ class Vector(Samplable, collections.abc.Sequence):
 		smt_atan_other = "(arctan (div "+smt_divide(other_y, other_x)+")" 
 		smt_atan_vec   = "(arctan (div "+smt_divide(vec_y, vec_x)+")" 
 		subtraction = smt_subtract(smt_atan_other, smt_atan_vec)
-		theta = normalizeAngle_SMT(subtraction, debug=debug)
+		theta = normalizeAngle_SMT(smt_file_path, cached_variables, subtraction, debug=debug)
 		return theta
 
 	@scalarOperator

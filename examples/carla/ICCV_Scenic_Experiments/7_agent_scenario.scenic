@@ -9,4 +9,3 @@ car3 = Car left of ego by Range(4,6)
 Cone right of car3 by Range(2,3)
 Bicycle beyond car1 by Range(-1,1) @ Range(2,5),
 	with regionContainedIn None 
-

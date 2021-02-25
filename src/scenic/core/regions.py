@@ -171,8 +171,8 @@ def encodePolygonalRegion_SMT(smt_file_path, cached_variables, triangles, smt_va
 	assert(isinstance(smt_var, tuple) and len(smt_var)==2)
 	(x, y) = smt_var
 
-	egoVisibleRegion = cached_variables['egoVisibleRegion']
-	egoVisibleRegion.encodeToSMT(smt_file_path, cached_variables, (x,y), debug=debug)
+	regionAroundEgo = cached_variables['regionAroundEgo']
+	regionAroundEgo.encodeToSMT(smt_file_path, cached_variables, (x,y), debug=debug)
 
 	s = findVariableName(smt_file_path, cached_variables, 's', debug=debug)
 	t = findVariableName(smt_file_path, cached_variables, 't', debug=debug)

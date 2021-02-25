@@ -920,28 +920,38 @@ class AttributeDistribution(Distribution):
 
 		from scenic.core.object_types import Point
 		import scenic.domains.driving.roads as roads
+		import scenic.core.type_support as type_support
 
+		if isinstance(self.object, type_support.TypecheckedDistribution):
+			obj = self.object.dist
+		else:
+			obj = self.object
+
+		output_smt = None
 		if encode:
-			if isinstance(self.object, Point):
-				return getattr(self.object._conditioned, self.attribute).encodeToSMT(smt_file_path, 
+			if isinstance(obj, Point):
+				output_smt = getattr(obj._conditioned, self.attribute).encodeToSMT(smt_file_path, 
 										cached_variables, debug=debug)
 
-			elif isinstance(self.object, Options):
-				if self.object.checkOptionsType(roads.NetworkElement):
-					return self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+			elif isinstance(obj, Options):
+				if obj.checkOptionsType(roads.NetworkElement):
+					return obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 				else: 
 					raise NotImplementedError
-			elif isinstance(self.object, UniformDistribution):
-				return self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+			elif isinstance(obj, UniformDistribution):
+				return obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 			else:
 				if debug:
-					writeSMTtoFile("NEW CASE: ", type(self.object._conditioned))
+					writeSMTtoFile("NEW CASE: ", type(obj._conditioned))
+				print("NEW CASE: AttributeDistribution type(self.object): ", type(obj))
+				print("NEW CASE: AttributeDistribution self.object: ", obj)
+				print("NEW CASE: AttributeDistribution self.attribute: ", self.attribute)
 				raise NotImplementedError
 
 		else:
-			if isinstance(self.object, Options):
-				if self.object.checkOptionsType(roads.NetworkElement):
-					networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+			if isinstance(obj, Options):
+				if obj.checkOptionsType(roads.NetworkElement):
+					networkObj = obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 					if networkObj is None :
 						return None
 
@@ -956,10 +966,13 @@ class AttributeDistribution(Distribution):
 						outputObjs.append(getattr(obj, self.attribute))
 					return Options(outputObjs)
 				else: 
+					print("NEW CASE: AttributeDistribution type(self.object): ", type(obj))
+					print("NEW CASE: AttributeDistribution self.object: ", obj)
+					print("NEW CASE: AttributeDistribution self.attribute: ", self.attribute)
 					raise NotImplementedError
 
-			elif isinstance(self.object, UniformDistribution):
-				networkObj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+			elif isinstance(obj, UniformDistribution):
+				networkObj = obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 				if networkObj is None :
 					return None
 
@@ -972,12 +985,35 @@ class AttributeDistribution(Distribution):
 				for obj in networkObj.options:
 					outputObjs.append(getattr(obj, self.attribute))
 				return Options(outputObjs)
+
+			elif isinstance(obj, OperatorDistribution):
+				import scenic.core.vectors as vectors
+				if self.attribute == 'orientation':
+					regionOptions = obj.encodeToSMT(smt_file_path, cached_variables, debug, encode=False)
+					assert(isinstance(regionOptions, Options))
+
+					if isinstance(obj._conditioned, vectors.Vector):
+						vector = obj._conditioned
+						for reg in regionOptions.options:
+							if reg.containsPoint(vector):
+								return Options([reg])
+					else:
+						return regionOptions
+				else:
+					print("NEW CASE: AttributeDistribution type(self.object): ", type(obj))
+					print("NEW CASE: AttributeDistribution self.object: ", obj)
+					print("NEW CASE: AttributeDistribution self.attribute: ", self.attribute)
+					raise NotImplementedError
+
 			else:
+				print("NEW CASE: AttributeDistribution type(self.object): ", type(obj))
+				print("NEW CASE: AttributeDistribution self.object: ", obj)
+				print("NEW CASE: AttributeDistribution self.attribute: ", self.attribute)
 				if debug:
-					writeSMTtoFile("NEW CASE: ", type(self.object))
+					writeSMTtoFile("NEW CASE: ", type(obj))
 				raise NotImplementedError
 
-		return None
+		return cacheVarName(cached_variables, self, output_smt)
 
 	def sampleGiven(self, value):
 		obj = value[self.object]
@@ -1035,7 +1071,7 @@ class OperatorDistribution(Distribution):
 				op._conditioned.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode = True):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		   encodeToSMT() must return 'cached_variables' dictionary
@@ -1108,40 +1144,56 @@ class OperatorDistribution(Distribution):
 			writeSMTtoFile(smt_file_path, smt_encoding)
 
 		elif self.operator == '__call__':
-			if isinstance(self.object, AttributeDistribution) and self.object.attribute == 'intersect' and \
-				isinstance(self.object.object, Options):
-				optionsDist = self.object.object
-				possibleRegions = list(optionsDist.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False).options)
+			if isinstance(self.object, AttributeDistribution) and self.object.attribute == 'intersect':
 				assert(len(self.operands)==1)
-				possibleRegions.append(self.operands[0])
-				print("len(possibleRegions): ", len(possibleRegions))
+
+				distOverRegions = self.object.encodeToSMT(smt_file_path, cached_variables, debug, encode=False)
+				print("OperatorDistribution __call__ distOverRegions: ", distOverRegions)
+				assert(isinstance(distOverRegions, Options))
+				possibleRegions = []
+				otherRegion = self.operands[0]
+				import shapely.geometry.polygon as polygon
+				for reg in distOverRegions.options:
+					if not reg.polygon.intersection(otherRegion.polygon).is_empty:
+						possibleRegions.append(reg)
+
+				if not encode:
+					return possibleRegions
 
 				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
 				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 				output = (x,y)
 
+				possibleRegions.append(self.operands[0])
+
 				for region in possibleRegions:
 					region.encodeToSMT(smt_file_path, cached_variables, output, debug=debug)
 
-		elif self.operator == '__getitem__':
+
+		elif self.operator == '__getitem__': # called only from VectorField and Vector Classes
 			import scenic.core.vectors as vectors
 			if isinstance(self.object, AttributeDistribution) and self.object.attribute == 'orientation':
 				# type(self.object) could be AttributeDist, Options
-
 				import scenic.core.vectors as vectors
 
 				if debug:
 					writeSMTtoFile(smt_file_path, "OperatorDistribution self.operator == __getitem__")
 
-				# all 'encode=False' flag outputs Options class 
+				# all 'encode=False' flag outputs either Options class or heading
 				optionsRegion = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
-
-				if len(self.operands)==1 and isConditioned(self.operands[0]):
-					heading = self.sample()
-					return cacheVarName(cached_variables, self, str(heading))
 
 				if debug:
 					writeSMTtoFile(smt_file_path, "operatordist optionRegion: "+str(optionsRegion))
+
+				import scenic.core.vectors as vectors
+				if isConditioned(self.operands[0]) and isinstance(self.operands[0]._conditioned, vectors.Vector):
+					vector = self.operands[0]._conditioned
+					for region in optionsRegion:
+						if region.containsPoint(vector):
+							heading = str(region.nominalDirectionsAt(vector))
+							writeSMTtoFile(smt_file_path, smt_assert("equal", heading, output))
+							return cacheVarName(cached_variables, self, output)
+					return None
 
 				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
 				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
@@ -1154,7 +1206,7 @@ class OperatorDistribution(Distribution):
 
 				heading_var = output
 				elems = optionsRegion.options
-				self.encodeHeading(elems, smt_file_path, (x,y), heading_var, debug=debug)
+				self.encodeHeading(elems, smt_file_path, smt_var, heading_var, debug=debug)
 
 			else:
 				raise NotImplementedError
@@ -1846,38 +1898,40 @@ class Options(MultiplexerDistribution):
 
 		if encode:
 			if self.checkOptionsType(roads.NetworkElement):
-
 				valid_options = []
-				egoSectorPolygon = cached_variables['egoVisibleRegion'].polygon
-				if not isConditioned(self):
-					for opt in self.options:
-						intersection = egoSectorPolygon.intersection(opt.polygon)
-						if not (intersection.is_empty):
-							valid_options.append(opt)
+				regionAroundEgo = cached_variables['regionAroundEgo'].polygon
+				import scenic.core.vectors as vectors
 
-					import matplotlib.pyplot as plt
-					import shapely.geometry.polygon as polygon
+				if not isinstance(self._conditioned, vectors.Vector):
+					# then find the network elem that intersects with ego's visible
+					for reg in self.options:
+						intersection = regionAroundEgo.intersection(reg.polygon)
+						if not (intersection.is_empty):
+							valid_options.append(reg)
+
+					# import matplotlib.pyplot as plt
+					# import shapely.geometry.polygon as polygon
 					# if debug:
-					for elem in valid_options:
-						if isinstance(elem.polygon, polygon.Polygon):
-							plt.plot(*elem.polygon.exterior.xy)
-						else:
-							for geom in elem.polygon.geoms:
-								plt.plot(*geom.exterior.xy)
-					plt.plot(*egoSectorPolygon.exterior.xy)
-					plt.show()
+					# for elem in valid_options:
+					# 	if isinstance(elem.polygon, polygon.Polygon):
+					# 		plt.plot(*elem.polygon.exterior.xy)
+					# 	else:
+					# 		for geom in elem.polygon.geoms:
+					# 			plt.plot(*geom.exterior.xy)
+					# plt.plot(*regionAroundEgo.exterior.xy)
+					# plt.show()
 
 					if debug:
-						writeSMTtoFile(smt_file_path, "valid_options.options: "+str(valid_options))
+						writeSMTtoFile(smt_file_path, "valid_options.options: "+str(valid_options.options))
 
 					if len(valid_options) == 0:
 						writeSMTtoFile(smt_file_path, "len(valid_options)==0")
 						return None
 
-					self._conditioned = Options(valid_options)
-					valid_options = self._conditioned
 				else:
-					valid_options = self._conditioned
+					vector = self._conditioned
+					output_smt = vector.encodeToSMT(smt_file_path, cached_variables, debug)
+					return cacheVarName(cached_variables, self, output_smt)
 
 				import scenic.core.regions as regions
 				import shapely.geometry
@@ -1888,7 +1942,7 @@ class Options(MultiplexerDistribution):
 					smt_var = (x,y)
 
 				polygonalRegions = []
-				for elem in valid_options.options:
+				for elem in valid_options:
 					if isinstance(elem.polygon, shapely.geometry.multipolygon.MultiPolygon):
 						for geom in elem.polygon.geoms:
 							polygonalRegions.append(geom)
@@ -1932,33 +1986,40 @@ class Options(MultiplexerDistribution):
 		else:
 			if self.checkOptionsType(roads.NetworkElement):
 				valid_options = []
-				egoSectorPolygon = cached_variables['egoVisibleRegion'].polygon
-				if not isConditioned(self):
-					valid_options = []
-					for opt in self.options:
-						if not (egoSectorPolygon.intersection(opt.polygon).is_empty):
-							valid_options.append(opt)
+				regionAroundEgo = cached_variables['regionAroundEgo'].polygon
+				import scenic.core.vectors as vectors
+				if not isinstance(self._conditioned, vectors.Vector):
+					for reg in self.options:
+						intersection = regionAroundEgo.intersection(reg.polygon)
+						if not (intersection.is_empty):
+							valid_options.append(reg)
 
-					if len(valid_options) == 0:
-						return None
+					# import matplotlib.pyplot as plt
+					# import shapely.geometry.polygon as polygon
+					# # if debug:
+					# for elem in valid_options:
+					# 	if isinstance(elem.polygon, polygon.Polygon):
+					# 		plt.plot(*elem.polygon.exterior.xy)
+					# 	else:
+					# 		for geom in elem.polygon.geoms:
+					# 			plt.plot(*geom.exterior.xy)
 
-					import matplotlib.pyplot as plt
-					import shapely.geometry.polygon as polygon
-					# if debug:
-					for elem in valid_options:
-						if isinstance(elem.polygon, polygon.Polygon):
-							plt.plot(*elem.polygon.exterior.xy)
-						else:
-							for geom in elem.polygon.geoms:
-								plt.plot(*geom.exterior.xy)
+					# plt.plot(*regionAroundEgo.exterior.xy)
+					# plt.show()
 
-					plt.plot(*egoSectorPolygon.exterior.xy)
-					plt.show()
+				else:
+					vector = self._conditioned
+					for reg in self.options:
+						if reg.containsPoint(vector):
+							valid_options.append(reg)
 
-					self._conditioned = Options(valid_options)
+				if len(valid_options) == 0:
+					return None
 
-				return self._conditioned
+				return Options(valid_options)
+
 			else:
+				print("Options NEW CASE: self.options: ", self.options)
 				raise NotImplementedError
 
 		return None
@@ -2064,21 +2125,19 @@ class UniformDistribution(Distribution):
 		if len(self.options) != 1:
 			raise NotImplementedError
 
-		import scenic.domains.driving.roads as roads
+		output_smt = None
 		if not isConditioned(self):
-			options = self.options[0].encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
-			print("options: ", options)
-			print("options[0]: ", options[0])
-			if options is None:
-				return None
-			self._conditioned = Options(options)
-			return self._conditioned
+			output_smt = self.options[0].encodeToSMT(smt_file_path, cached_variables, debug, encode)
 		else:
-			return self._conditioned
-		return None
+			output_smt = self._conditioned.encodeToSMT(smt_file_path, cached_variables, debug, encode)
+
+		if output_smt is None:
+			return None
+		
+		return cacheVarName(cached_variables, self, output_smt)
 
 	def conditionforSMT(self, condition, conditioned_bool):
-		raise NotImplementedError 
+		raise NotImplementedError
 
 	def sampleGiven(self, value):
 		opts = []

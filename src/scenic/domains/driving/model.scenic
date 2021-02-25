@@ -31,7 +31,7 @@ user uses the :option:`--param` command-line option to specify the map.
 from abc import ABC, abstractmethod
 
 from scenic.domains.driving.workspace import DrivingWorkspace
-from scenic.domains.driving.roads import ManeuverType, Network, Lane, Road, Sidewalk, Intersection, Shoulder
+from scenic.domains.driving.roads import ManeuverType, Network, Lane, LaneSection, Road, Sidewalk, Intersection, Shoulder
 from scenic.domains.driving.actions import *
 from scenic.domains.driving.behaviors import *
 
@@ -47,7 +47,6 @@ param map_options = {}
 
 #: The road network being used for the scenario, as a `Network` object.
 network : Network = Network.fromFile(globalParameters.map, **globalParameters.map_options)
-
 workspace = DrivingWorkspace(network)
 
 ## Various useful objects and regions
@@ -62,6 +61,7 @@ curb : Region = network.curbRegion
 
 #: The union of all curbs.
 lane : Lane = Uniform(*network.lanes)
+laneSection : LaneSection = Uniform(*network.laneSections)
 
 #: The union of all sidewalks.
 sidewalk : Sidewalk = Uniform(*network.sidewalks)

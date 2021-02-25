@@ -470,7 +470,7 @@ class Vector(Samplable, collections.abc.Sequence):
 		(vec_x, vec_y) = checkAndEncodeSMT(smt_file_path, cached_variables, self, debug = debug)
 		dx = smt_assert("subtract", other_x, vec_x)
 		dy = smt_assert("subtract", other_y, vec_y)
-		smt_atan = "(arctan "+smt_divide(dy, dx)+")" 
+		smt_atan = "(arctan "+smt_divide(dy, dx)+")"
 		subtraction = smt_subtract(smt_atan, smt_divide('3.1416','2'))
 		theta = normalizeAngle_SMT(smt_file_path, cached_variables, subtraction, debug=debug)
 		return theta

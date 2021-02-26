@@ -3,8 +3,10 @@ param carla_map = 'Town05'
 model scenic.simulators.carla.model #located in scenic/simulators/carla/model.scenic
 
 ego = Car on lane, facing Range(-10, 10) deg relative to roadDirection
-car1 = Car ahead of ego by Range(3, 5)
-Car behind ego by Range(4, 10)
-Car left of ego by Range(2,5)
+car = Car ahead of ego by Range(3, 5)
+truck = Truck visible from car,
+			facing Range(-20,0) deg relative to roadDirection
+mc = Motorcycle left of car by Range(2,5)
 
-require not (car1 in intersection)
+require ego can see mc
+require (distance from truck to car) < 30

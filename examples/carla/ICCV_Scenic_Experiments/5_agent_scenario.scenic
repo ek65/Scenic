@@ -3,9 +3,13 @@ param carla_map = 'Town05'
 model scenic.simulators.carla.model #located in scenic/simulators/carla/model.scenic
 
 ego = Car on lane, facing Range(-10, 10) deg relative to roadDirection
-car1 = Car ahead of ego by Range(3,5)
-car2 = Car behind ego by Range(4, 10)
-Car left of ego by Range(2,4)
-Truck right of car2 by Range(2,4)
+bicycle = Bicycle ahead of ego by Range(3,5),
+			facing Range(-10,10) deg relative to roadDirection
+truck = Truck behind ego by Range(4, 10)
+mc = Motorcycle left of ego by Range(2,4),
+		facing toward bicycle
+ped = Pedestrian right of bicycle by Normal(2, 1),
+		with regionContainedIn None
 
-# require Pedestrian on roadRegion
+require ped in roadRegion
+require abs(relative heading of ego from mc) < 30 deg

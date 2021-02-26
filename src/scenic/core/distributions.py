@@ -169,7 +169,7 @@ def findVariableName(smt_file_path, cached_variables, class_name, class_type=Non
 	cached_var = [variable for variable in variable_list if variable.startswith(class_name)]
 	var_name = class_name+str(len(cached_var)+1) 
 	if debug:
-		writeSMTtoFile(smt_file_path, "creating a variable "+var_name)
+		print("findVariableName() creating a variable: "+var_name)
 
 	if class_type == None :
 		declare_var= "(declare-fun "+var_name+" () Real)"
@@ -192,6 +192,8 @@ def checkAndEncodeSMT(smt_file_path, cached_variables, obj, debug=False):
 		return obj
 	elif isinstance(obj, tuple):
 		return obj
+	elif isinstance(obj._conditioned, Constant):
+		return str(obj.value)
 	elif isinstance(obj._conditioned, Samplable):
 		return obj._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 	elif isinstance(obj._conditioned, int) or isinstance(obj._conditioned, float):
@@ -588,14 +590,14 @@ class FunctionDistribution(Distribution):
 		raise NotImplementedError
 
 		if debug:
-			writeSMTtoFile(smt_file_path, "FunctionDistribution")
+			print("FunctionDistribution")
 
 		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
 			return cacheVarName(cached_variables, self, self._conditioned)
 
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "FunctionDistribution already cached")
+				print("FunctionDistribution already cached")
 			return cached_variables[self]
 			
 		import scenic.core.vectors as vectors
@@ -720,14 +722,14 @@ class StarredDistribution(Distribution):
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
 		if debug:
-			writeSMTtoFile(smt_file_path, "Class StarredDistribution encodeToSMT")
+			print("Class StarredDistribution encodeToSMT")
 
 		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
 			return cacheVarName(cached_variables, self, self._conditioned)
 
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "StarredDistribution already cached")
+				print("StarredDistribution already cached")
 			return cached_variables[self]
 
 		return self.value._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)	
@@ -761,7 +763,7 @@ class MethodDistribution(Distribution):
 		"""
 		# import scenic.core.geometry as geometry
 		if debug:
-			writeSMTtoFile(smt_file_path, "MethodDistribution")
+			print("MethodDistribution")
 			# writeSMTtoFile(smt_file_path, "method: "+str(self.method))
 			# writeSMTtoFile(smt_file_path, "type(method): "+str(type(self.method)))
 			# # writeSMTtoFile(smt_file_path, "object: "+str(self.object))
@@ -776,7 +778,7 @@ class MethodDistribution(Distribution):
 
 		if self in set(cached_variables.keys()):
 			if debug:
-				writeSMTtoFile(smt_file_path, "MethodDistribution already exists in cached_variables dict")
+				print( "MethodDistribution already exists in cached_variables dict")
 			return cached_variables[self]
 
 		import scenic.domains.driving.roads as roads
@@ -910,13 +912,13 @@ class AttributeDistribution(Distribution):
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
 		if debug:
-			writeSMTtoFile(smt_file_path, "Class AttributeDistribution encodeToSMT")
+			print( "Class AttributeDistribution encodeToSMT")
 
 		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
 			return cacheVarName(cached_variables, self, self._conditioned)
 		
 		if self in cached_variables.keys():
-			writeSMTtoFile(smt_file_path, "Class AttributeDistribution self in cached_variables")
+			print( "Class AttributeDistribution self in cached_variables")
 
 		from scenic.core.object_types import Point
 		import scenic.domains.driving.roads as roads
@@ -941,8 +943,7 @@ class AttributeDistribution(Distribution):
 			elif isinstance(obj, UniformDistribution):
 				return obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 			else:
-				if debug:
-					writeSMTtoFile("NEW CASE: ", type(obj._conditioned))
+				print("NEW CASE: ", type(obj._conditioned))
 				print("NEW CASE: AttributeDistribution type(self.object): ", type(obj))
 				print("NEW CASE: AttributeDistribution self.object: ", obj)
 				print("NEW CASE: AttributeDistribution self.attribute: ", self.attribute)
@@ -951,20 +952,11 @@ class AttributeDistribution(Distribution):
 		else:
 			if isinstance(obj, Options):
 				if obj.checkOptionsType(roads.NetworkElement):
-					networkObj = obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
-					if networkObj is None :
+					networkObjs = obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+					if networkObjs is None:
 						return None
 
-					if self.attribute == 'orientation':
-						if debug: 
-							writeSMTtoFile(smt_file_path, "encode=False, self.attribute == orientation")
-							writeSMTtoFile(smt_file_path, "networkObj: "+str(networkObj))
-						return networkObj
-
-					outputObjs = []
-					for obj in networkObj.options :
-						outputObjs.append(getattr(obj, self.attribute))
-					return Options(outputObjs)
+					return networkObjs
 				else: 
 					print("NEW CASE: AttributeDistribution type(self.object): ", type(obj))
 					print("NEW CASE: AttributeDistribution self.object: ", obj)
@@ -973,30 +965,31 @@ class AttributeDistribution(Distribution):
 
 			elif isinstance(obj, UniformDistribution):
 				networkObj = obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
-				if networkObj is None :
+				if networkObj is None:
 					return None
-
-				if self.attribute == 'orientation':
-					if debug: 
-							writeSMTtoFile(smt_file_path, "encode=False, self.attribute == orientation")
-					return networkObj
-
-				outputObjs = []
-				for obj in networkObj.options:
-					outputObjs.append(getattr(obj, self.attribute))
 				return Options(outputObjs)
 
 			elif isinstance(obj, OperatorDistribution):
 				import scenic.core.vectors as vectors
 				if self.attribute == 'orientation':
+					if debug:
+						print("AttributeDistribution obj: ", obj)
+						print("AttributeDistribution obj._conditioned: ", obj._conditioned)
 					regionOptions = obj.encodeToSMT(smt_file_path, cached_variables, debug, encode=False)
+					if debug:
+						print("AttributeDistribution obj OperatorDistribution regionOptions: ", regionOptions)
 					assert(isinstance(regionOptions, Options))
 
 					if isinstance(obj._conditioned, vectors.Vector):
 						vector = obj._conditioned
+						possibleRegions = []
+						import scenic.domains.driving.roads as roads
 						for reg in regionOptions.options:
-							if reg.containsPoint(vector):
-								return Options([reg])
+							if isinstance(reg, roads.NetworkElement) and reg.containsPoint(vector):
+								possibleRegions.append(reg)
+						if possibleRegions == []:
+							return None
+						return Options(possibleRegions)
 					else:
 						return regionOptions
 				else:
@@ -1009,8 +1002,6 @@ class AttributeDistribution(Distribution):
 				print("NEW CASE: AttributeDistribution type(self.object): ", type(obj))
 				print("NEW CASE: AttributeDistribution self.object: ", obj)
 				print("NEW CASE: AttributeDistribution self.attribute: ", self.attribute)
-				if debug:
-					writeSMTtoFile("NEW CASE: ", type(obj))
 				raise NotImplementedError
 
 		return cacheVarName(cached_variables, self, output_smt)
@@ -1077,23 +1068,23 @@ class OperatorDistribution(Distribution):
 		   encodeToSMT() must return 'cached_variables' dictionary
 		"""
 		if debug:
-			writeSMTtoFile(smt_file_path, "OperatorDistribution")
-			writeSMTtoFile(smt_file_path, "operator: "+str(self.operator))
-			writeSMTtoFile(smt_file_path, "type(operator): "+str(type(self.operator)))
+			print( "OperatorDistribution")
+			print( "operator: "+str(self.operator))
+			print( "type(operator): "+str(type(self.operator)))
 			# writeSMTtoFile(smt_file_path, "object: "+str(self.object))
-			writeSMTtoFile(smt_file_path, "type(object): "+str(type(self.object._conditioned)))
+			print( "type(object): "+str(type(self.object._conditioned)))
 			# writeSMTtoFile(smt_file_path, "operands: "+str(self.operands))
 			for op in self.operands:
-				writeSMTtoFile(smt_file_path, "type(operand): "+str(type(op)))
+				print( "type(operand): "+str(type(op)))
 
 		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
 			if debug:
-				writeSMTtoFile(smt_file_path, "OperatorDist is conditioned")
+				print( "OperatorDist is conditioned")
 			return cacheVarName(cached_variables, self, self._conditioned)
 
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "OperatorDistribution already exists in cached_variables dict")
+				print( "OperatorDistribution already exists in cached_variables dict")
 			return cached_variables[self]
 
 		output = findVariableName(smt_file_path, cached_variables, 'opdist', debug=debug)
@@ -1148,23 +1139,40 @@ class OperatorDistribution(Distribution):
 				assert(len(self.operands)==1)
 
 				distOverRegions = self.object.encodeToSMT(smt_file_path, cached_variables, debug, encode=False)
-				print("OperatorDistribution __call__ distOverRegions: ", distOverRegions)
+				if debug:
+					print("OperatorDistribution __call__ distOverRegions: ", distOverRegions)
 				assert(isinstance(distOverRegions, Options))
 				possibleRegions = []
 				otherRegion = self.operands[0]
+
+				import scenic.core.regions as regions
 				import shapely.geometry.polygon as polygon
-				for reg in distOverRegions.options:
-					if not reg.polygon.intersection(otherRegion.polygon).is_empty:
-						possibleRegions.append(reg)
+				assert(isinstance(otherRegion, regions.SectorRegion))
+				if debug:
+					print("OperatorDistribution __call__ otherRegion: ", otherRegion)
+
+				if otherRegion.checkRandomVar():
+					for reg in distOverRegions.options:
+						regPolygon = reg.polygon
+						if not regPolygon.intersection(otherRegion.polygon).is_empty:
+							possibleRegions.append(reg)
+
+				else:
+					regionAroundEgo = cached_variables['regionAroundEgo_polygon']
+					for reg in distOverRegions.options:
+						regPolygon = reg.polygon
+						intersection = regionAroundEgo.intersection(regPolygon)
+						if not intersection.is_empty:
+							possibleRegions.append(reg)
+
+				possibleRegions.append(self.operands[0])
 
 				if not encode:
-					return possibleRegions
+					return Options(possibleRegions)
 
 				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
 				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 				output = (x,y)
-
-				possibleRegions.append(self.operands[0])
 
 				for region in possibleRegions:
 					region.encodeToSMT(smt_file_path, cached_variables, output, debug=debug)
@@ -1177,18 +1185,19 @@ class OperatorDistribution(Distribution):
 				import scenic.core.vectors as vectors
 
 				if debug:
-					writeSMTtoFile(smt_file_path, "OperatorDistribution self.operator == __getitem__")
+					print( "OperatorDistribution self.operator == __getitem__")
 
 				# all 'encode=False' flag outputs either Options class or heading
 				optionsRegion = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
+				assert(isinstance(optionsRegion, Options))
 
 				if debug:
-					writeSMTtoFile(smt_file_path, "operatordist optionRegion: "+str(optionsRegion))
+					print( "operatordist optionRegion: "+str(optionsRegion))
 
 				import scenic.core.vectors as vectors
 				if isConditioned(self.operands[0]) and isinstance(self.operands[0]._conditioned, vectors.Vector):
 					vector = self.operands[0]._conditioned
-					for region in optionsRegion:
+					for region in optionsRegion.options:
 						if region.containsPoint(vector):
 							heading = str(region.nominalDirectionsAt(vector))
 							writeSMTtoFile(smt_file_path, smt_assert("equal", heading, output))
@@ -1206,6 +1215,11 @@ class OperatorDistribution(Distribution):
 
 				heading_var = output
 				elems = optionsRegion.options
+
+				import scenic.domains.driving.roads as roads
+				if not optionsRegion.checkOptionsType(roads.NetworkElement):
+					elems = optionsRegion.options[0:len(optionsRegion)]
+
 				self.encodeHeading(elems, smt_file_path, smt_var, heading_var, debug=debug)
 
 			else:
@@ -1222,7 +1236,7 @@ class OperatorDistribution(Distribution):
 		else:
 			print("self.operator: " + str(self.operator))
 			if debug:
-				writeSMTtoFile(smt_file_path, "self.operator: " + str(self.operator))
+				print( "self.operator: " + str(self.operator))
 			raise NotImplementedError
 
 		return cacheVarName(cached_variables, self, output)
@@ -1517,7 +1531,7 @@ class Range(Distribution):
 		
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "Range already cached")
+				print( "Range already cached")
 			return cached_variables[self]
 
 		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, debug=debug)
@@ -1589,14 +1603,14 @@ class Normal(Distribution):
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		"""
 		if debug:
-			writeSMTtoFile(smt_file_path, "Normal")
+			print( "Normal")
 
 		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
 			return cacheVarName(cached_variables, self, self._conditioned)
 		
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "Normal already cached")
+				print( "Normal already cached")
 			return cached_variables[self]
 
 		var_name = findVariableName(smt_file_path, cached_variables, 'normal', debug=debug)
@@ -1691,14 +1705,14 @@ class TruncatedNormal(Normal):
 		"""
 
 		if debug:
-			writeSMTtoFile(smt_file_path, "TruncatedNormal")
+			print( "TruncatedNormal")
 
 		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
 			return cacheVarName(cached_variables, self, self._conditioned)
 		
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "TruncatedNormal already cached")
+				print( "TruncatedNormal already cached")
 			return cached_variables[self]
 
 		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, debug=debug)
@@ -1806,14 +1820,14 @@ class DiscreteRange(Distribution):
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		"""
 		if debug:
-			writeSMTtoFile(smt_file_path, "DiscreteRange")
+			print( "DiscreteRange")
 
 		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
 			return cacheVarName(cached_variables, self, self._conditioned)
 
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "DiscreteRange is already cached")
+				print( "DiscreteRange is already cached")
 			return cached_variables[self]
 
 		low = checkAndEncodeSMT(smt_file_path, cached_variables, self.low, debug=debug)
@@ -1886,9 +1900,9 @@ class Options(MultiplexerDistribution):
 
 	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False, encode=True):
 		if debug:
-			writeSMTtoFile(smt_file_path, "Options class")
+			print( "Options class")
 			if isConditioned(self):
-				writeSMTtoFile(smt_file_path, str(self._conditioned))
+				print( str(self._conditioned))
 
 		if encode and self in cached_variables.keys():
 			return cached_variables[self]
@@ -1922,7 +1936,7 @@ class Options(MultiplexerDistribution):
 					# plt.show()
 
 					if debug:
-						writeSMTtoFile(smt_file_path, "valid_options.options: "+str(valid_options.options))
+						print( "valid_options: "+str(valid_options))
 
 					if len(valid_options) == 0:
 						writeSMTtoFile(smt_file_path, "len(valid_options)==0")
@@ -1952,7 +1966,8 @@ class Options(MultiplexerDistribution):
 						print("elem: ", elem)
 						raise NotImplementedError
 
-				print("in Options class, polygonalRegions: ", polygonalRegions)
+				if debug:
+					print("in Options class, polygonalRegions: ", polygonalRegions)
 				multipolygon = shapely.geometry.multipolygon.MultiPolygon(polygonalRegions)
 				polygonReg = regions.regionFromShapelyObject(multipolygon)
 				polygonReg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
@@ -2114,11 +2129,11 @@ class UniformDistribution(Distribution):
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode = True):
 		if debug:
-			writeSMTtoFile(smt_file_path, "class UniformDistribution encodeToSMT")
+			print( "class UniformDistribution encodeToSMT")
 
 		if self in set(cached_variables.keys()):
 			if debug:
-				writeSMTtoFile(smt_file_path, "UniformDistribution already cached")
+				print( "UniformDistribution already cached")
 			return cached_variables[self]
 
 		# Assume that only one StarredDist is an element of self.options

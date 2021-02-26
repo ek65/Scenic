@@ -364,7 +364,7 @@ class Road(LinearElement):
 
     def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug = False):
         if debug:
-            writeSMTtoFile(smt_file_path, "Class Road encodeToSMT")
+            print( "Class Road encodeToSMT")
 
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
@@ -401,7 +401,7 @@ class Road(LinearElement):
             type(point):= Vector
         """
         if debug:
-            writeSMTtoFile(smt_file_path, "class Road sectionAtEncodeSMT")
+            print( "class Road sectionAtEncodeSMT")
         output = self.network.findPointInEncodeSMT(smt_file_path, cached_variables, smt_var, self.sections, debug=debug)
         return output
 
@@ -414,7 +414,7 @@ class Road(LinearElement):
 
     def laneSectionAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "class Road laneSectionAtEncodeSMT")
+            print( "class Road laneSectionAtEncodeSMT")
 
         point = _toVector(smt_var)
         output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, smt_var, debug=debug)
@@ -440,7 +440,7 @@ class Road(LinearElement):
 
     def laneAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "class Road laneAtEncodeSMT")
+            print( "class Road laneAtEncodeSMT")
         output = self.network.findPointInEncodeSMT(smt_file_path, cached_variables, smt_var, self.lanes, debug=debug)
         return output
 
@@ -451,7 +451,7 @@ class Road(LinearElement):
 
     def laneGroupAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "laneGroupAtEncodeSMT")
+            print( "laneGroupAtEncodeSMT")
 
         output = self.network.findPointInEncodeSMT(smt_file_path, cached_variables, smt_var, self.laneGroups, debug=debug)
         return output
@@ -463,7 +463,7 @@ class Road(LinearElement):
 
     def crossingAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "class Road crossingAtEncodeSMT")
+            print( "class Road crossingAtEncodeSMT")
 
         output = self.network.findPointInEncodeSMT(smt_file_path, cached_variables, smt_var, self.crossings, debug=debug)
         return output
@@ -534,7 +534,7 @@ class LaneGroup(LinearElement):
 
     def laneAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "class LaneGroup laneAtEncodeSMT")
+            print( "class LaneGroup laneAtEncodeSMT")
         output = self.network.findPointInEncodeSMT(smt_file_path, cached_variables, smt_var, self.lanes, debug=debug)
         return output
 
@@ -555,7 +555,7 @@ class Lane(_ContainsCenterline, LinearElement):
 
     def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "roads.py Lane Class")
+            print( "roads.py Lane Class")
     
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
@@ -576,7 +576,7 @@ class Lane(_ContainsCenterline, LinearElement):
             type(point):= Vector
         """
         if debug:
-            writeSMTtoFile(smt_file_path, "class Lane sectionAtEncodeSMT")
+            print( "class Lane sectionAtEncodeSMT")
         output = self.network.findPointInEncodeSMT(smt_file_path, cached_variables, smt_var, self.sections, debug=debug)
         return output
 
@@ -601,7 +601,7 @@ class RoadSection(LinearElement):
 
     def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "roads.py Class RoadSection encodeToSMT")
+            print( "roads.py Class RoadSection encodeToSMT")
 
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
@@ -652,7 +652,7 @@ class RoadSection(LinearElement):
 
     def laneAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "class RoadSection laneAtEncodeSMT")
+            print( "class RoadSection laneAtEncodeSMT")
         output = self.network.findPointInEncodeSMT(smt_file_path, cached_variables, smt_var, self.lane, debug=debug)
         return output
 
@@ -696,7 +696,7 @@ class LaneSection(_ContainsCenterline, LinearElement):
 
     def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "roads.py Class LaneSection encodeToSMT")
+            print( "roads.py Class LaneSection encodeToSMT")
 
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
@@ -752,7 +752,7 @@ class Sidewalk(_ContainsCenterline, LinearElement):
 
     def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "roads.py Class Sidewalk encodeToSMT")
+            print( "roads.py Class Sidewalk encodeToSMT")
 
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
@@ -798,7 +798,7 @@ class Intersection(NetworkElement):
 
     def encodeToSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "roads.py Class Intersection encodeToSMT")
+            print( "roads.py Class Intersection encodeToSMT")
 
         shapely_polygon = self.polygon
         polygonalRegion = regionFromShapelyObject(shapely_polygon)
@@ -847,7 +847,7 @@ class Intersection(NetworkElement):
 
     def nominalDirectionsAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "roads.py Class Intersection nominalDirectionsAtEncodeSMT")
+            print( "roads.py Class Intersection nominalDirectionsAtEncodeSMT")
 
         raise NotImplementedError
         # output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
@@ -1202,7 +1202,7 @@ class Network:
 
     def findPointInEncodeSMT(self, smt_file_path, cached_variables, smt_var, elems, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "findPointInEncodeSMT")
+            print( "findPointInEncodeSMT")
 
         point = _toVector(smt_var)
         output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, smt_var, debug=debug)
@@ -1252,7 +1252,7 @@ class Network:
     def _findPointInAllForSMTEncoding(self, smt_file_path, cached_variables, things, key=lambda e: e, debug=False):
         """ outputs a list of scenic regions intersecting with ego's visible Region """
         if debug: 
-            writeSMTtoFile(smt_file_path, "Class Network _findPointInAllForSMTEncoding")
+            print( "Class Network _findPointInAllForSMTEncoding")
         region = cached_variables['regionAroundEgo']
         found = []
         for thing in things:
@@ -1268,7 +1268,7 @@ class Network:
 
     def _findPointInAllEncodeSMT(self, smt_file_path, cached_variables, smt_var, things, key, debug=False):
         if debug: 
-            writeSMTtoFile(smt_file_path, "Class Network _findPointInAllEncodeSMT")
+            print( "Class Network _findPointInAllEncodeSMT")
         # TODO : optimize the use of point
         point = _toVector(smt_var)
         region = cached_variables['regionAroundEgo']
@@ -1315,7 +1315,7 @@ class Network:
 
     def elementAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_encoding, "elementAtEncodeSMT")
+            print(smt_encoding, "elementAtEncodeSMT")
         raise NotImplementedError
 
     @distributionMethod
@@ -1325,7 +1325,7 @@ class Network:
 
     def roadAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "roadAtEncodeSMT")
+            print( "roadAtEncodeSMT")
         point = _toVector(point)
         output = self.findPointInEncodeSMT(smt_file_path, cached_variables, smt_var, self.allRoads, debug=False)
         assert(output != None)
@@ -1338,7 +1338,7 @@ class Network:
 
     def laneAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "laneAtEncodeSMT")
+            print( "laneAtEncodeSMT")
         point = _toVector(point)
         output = self.findPointInEncodeSMT(smt_file_path, cached_variables, smt_var, self.lanes, debug=False)
         assert(output != None)
@@ -1353,7 +1353,7 @@ class Network:
 
     def laneSectionAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "laneSectionAtEncodeSMT")
+            print( "laneSectionAtEncodeSMT")
         point = _toVector(point)
         output_point = checkAndEncodeSMT(smt_file_path, cached_variables, smt_var, debug=debug)
         intersectingLanes = self.findPointInForSMTEncoding(cached_variables['regionAroundEgo'], self.lanes)
@@ -1379,7 +1379,7 @@ class Network:
 
     def laneGroupAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "laneGroupAtEncodeSMT")
+            print( "laneGroupAtEncodeSMT")
         point = _toVector( smt_var)
         output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, smt_var, debug=debug)
         intersectingRoads = self.findPointInForSMTEncoding(cached_variables['regionAroundEgo'], self.allRoads)
@@ -1406,7 +1406,7 @@ class Network:
 
     def crossingAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "crossingAtEncodeSMT")
+            print( "crossingAtEncodeSMT")
         point = _toVector(smt_var)
         output_point = checkAndEncodeSMT(smt_file_path, cached_variables, point, smt_var, debug=debug)
         intersectingRoads = self.findPointInForSMTEncoding(cached_variables['regionAroundEgo'], self.allRoads)
@@ -1431,7 +1431,7 @@ class Network:
 
     def intersectionAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "intersectionAtEncodeSMT")
+            print( "intersectionAtEncodeSMT")
         point = _toVector(smt_var)
         output = self.findPointInEncodeSMT(smt_file_path, cached_variables, point, self.intersections, debug=False)
         assert(output != None)
@@ -1454,7 +1454,7 @@ class Network:
 
     def nominalDirectionsAtEncodeSMT(self, smt_file_path, cached_variables, smt_var, debug=False):
         if debug:
-            writeSMTtoFile(smt_file_path, "roads.py Class Network nominalDirectionsAtEncodeSMT")
+            print( "roads.py Class Network nominalDirectionsAtEncodeSMT")
 
         raise NotImplementedError
         # # assume that the point is conditioned by now

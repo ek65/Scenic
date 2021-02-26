@@ -14,7 +14,7 @@ from scenic.core.distributions import (Samplable, RejectionException, needsSampl
                                        smt_divide, smt_and, smt_equal, smt_mod, smt_assert, findVariableName,
                                        checkAndEncodeSMT, writeSMTtoFile, cacheVarName, smt_lessThan, smt_lessThanEq,
                                        smt_ite, normalizeAngle_SMT, smt_or, vector_operation_smt, Options, isConditioned,
-                                       Options, UniformDistribution)
+                                       Options, UniformDistribution, Constant)
 from scenic.core.lazy_eval import valueInContext
 from scenic.core.vectors import Vector, OrientedVector, VectorDistribution, VectorField, VectorOperatorDistribution
 from scenic.core.geometry import _RotatedRectangle
@@ -43,7 +43,7 @@ def pruneValidLines(smt_file_path, cached_variables, lineString, debug=False):
 
 	"""
 	if debug:
-		writeSMTtoFile(smt_file_path, "pruneValidLines")
+		print( "pruneValidLines")
 
 	oriented_vector = cached_variables['ego']
 	heading = oriented_vector.heading
@@ -79,7 +79,7 @@ def encodeLine_SMT(smt_file_path, cached_variables, lineString_list, point, debu
 	""" point1, point2 of type := (float, float), defines a line segment
 	""" 
 	if debug:
-		writeSMTtoFile(smt_file_path, "encodeLine_SMT")
+		print( "encodeLine_SMT")
 
 	assert(isinstance(lineString_list, list))
 	assert(lineString_list != [])
@@ -166,7 +166,7 @@ def encodeLine_SMT(smt_file_path, cached_variables, lineString_list, point, debu
 def encodePolygonalRegion_SMT(smt_file_path, cached_variables, triangles, smt_var, debug=False):
 	""" Assumption: the polygons given from polygon region will always be in triangles """
 	if debug:
-		writeSMTtoFile(smt_file_path, "encodePolygonalRegion_SMT")
+		print( "encodePolygonalRegion_SMT")
 
 	assert(isinstance(smt_var, tuple) and len(smt_var)==2)
 	(x, y) = smt_var
@@ -219,16 +219,16 @@ def encodePolygonalRegion_SMT(smt_file_path, cached_variables, triangles, smt_va
 		else:
 			cumulative_smt_encoding = smt_or(cumulative_smt_encoding, smt_encoding)
 
-		# if debug:
-		plt.plot(*triangle.exterior.xy, color='g')
-
 		if debug:
-			writeSMTtoFile(smt_file_path, "p0: "+str(p0))
-			writeSMTtoFile(smt_file_path, "p1: "+str(p1))
-			writeSMTtoFile(smt_file_path, "p2: "+str(p2))
+			plt.plot(*triangle.exterior.xy, color='g')
 
-	# if debug:
-	plt.show()
+		# if debug:
+		# 	print( "p0: "+str(p0))
+		# 	print( "p1: "+str(p1))
+		# 	print( "p2: "+str(p2))
+
+	if debug:
+		plt.show()
 
 	final_smt_encoding = smt_assert(None, cumulative_smt_encoding)
 	writeSMTtoFile(smt_file_path, final_smt_encoding)
@@ -271,11 +271,11 @@ class PointInRegionDistribution(VectorDistribution):
 
 	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False):
 		if debug:
-			writeSMTtoFile(smt_file_path, "PointInRegionDistribution")
+			print( "PointInRegionDistribution")
 
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "PointInRegionDistribution already cached")
+				print( "PointInRegionDistribution already cached")
 			return cached_variables[self]
 
 		if smt_var is None:
@@ -290,7 +290,7 @@ class PointInRegionDistribution(VectorDistribution):
 
 		if isinstance(self._conditioned, Vector):
 			if debug:
-				writeSMTtoFile(smt_file_path, "PointInRegionDistribution is conditioned : " + str(self._conditioned))
+				print( "PointInRegionDistribution is conditioned : " + str(self._conditioned))
 			vector = self._conditioned
 			smt_var = (str(vector.x), str(vector.y))
 			return cacheVarName(cached_variables, self, smt_var)
@@ -583,17 +583,17 @@ class SectorRegion(Region):
 
 	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False):
 		if debug:
-			writeSMTtoFile(smt_file_path, "SectorRegion")
-			writeSMTtoFile(smt_file_path, "center: "+str(self.center))
-			writeSMTtoFile(smt_file_path, "type(center): "+str(type(self.center)))
-			writeSMTtoFile(smt_file_path, "radius: "+str(type(self.radius)))
-			writeSMTtoFile(smt_file_path, "heading: "+str(self.heading))
-			writeSMTtoFile(smt_file_path, "type(heading): "+str(type(self.heading)))
-			writeSMTtoFile(smt_file_path, "angle: "+str(type(self.angle)))
+			print( "SectorRegion")
+			print( "center: "+str(self.center))
+			print( "type(center): "+str(type(self.center)))
+			print( "radius: "+str(type(self.radius)))
+			print( "heading: "+str(self.heading))
+			print( "type(heading): "+str(type(self.heading)))
+			print( "angle: "+str(type(self.angle)))
 
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "SectorRegion already cached")
+				print( "SectorRegion already cached")
 			return cached_variables[self]
 
 		""" Let a line defined by two points `a` and `b`, with a -> b vector direction of interest,
@@ -621,7 +621,7 @@ class SectorRegion(Region):
 
 		# Encode and write to file, a contraint for a circle
 		if debug: 
-			writeSMTtoFile(smt_file_path, "encode circle of ego_visibleRegion")
+			print( "encode circle of ego_visibleRegion")
 		shifted_output_x = smt_subtract(output_x, center_x)
 		shifted_output_y = smt_subtract(output_y, center_y)
 		square_center_x = smt_multiply(shifted_output_x, shifted_output_x)
@@ -646,7 +646,7 @@ class SectorRegion(Region):
 		# compute "sign(Dx * Ty - Dy * Tx) <= 0" for a given point to be on the right side of the sector's left line 
 		# left_angle = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'left_angle')
 		if debug:
-			writeSMTtoFile(smt_file_path, "SectorRegion encode left_line constraint")
+			print( "SectorRegion encode left_line constraint")
 
 		D_left = vector_operation_smt((left_x, left_y), "subtract", (center_x, center_y))
 		T_left = vector_operation_smt((output_x, output_y), "subtract", (center_x, center_y))
@@ -659,7 +659,7 @@ class SectorRegion(Region):
 		# compute "0 <= sign(Dx * Ty - Dy * Tx)" for a given point to be on the left side of the sector's right line
 		# right_angle = findVariableName(cached_variables, smt_file_path, cached_variables['variables'], 'right_angle')
 		if debug:
-			writeSMTtoFile(smt_file_path, "SectorRegion encode right_line constraint")
+			print( "SectorRegion encode right_line constraint")
 
 		D_right = vector_operation_smt((right_x, right_y), "subtract", (center_x, center_y))
 		T_right = vector_operation_smt((output_x, output_y), "subtract", (center_x, center_y))
@@ -671,16 +671,38 @@ class SectorRegion(Region):
 
 		return cacheVarName(cached_variables, self, smt_var)
 
+	def checkRandomVar(self):
+		if not isinstance(self.center._conditioned, Vector):
+			return False
+		if not isinstance(self.radius._conditioned, (int, float, Constant)):
+			return False
+		if not isinstance(self.angle._conditioned, (int, float, Constant)):
+			return False
+		if not isinstance(self.heading._conditioned, (int, float, Constant)):
+			return False
+		return True
+
 	@cached_property
 	def polygon(self):
-		center, radius = self.center, self.radius
+		center, radius, heading, angle = self.center, self.radius, self.heading, self.angle
+		if not isinstance(self.center, Vector):
+			center = self.center.sample()
+		if not (isinstance(self.radius, (int, float, Constant))):
+			radius = self.radius.sample()
+		if not (isinstance(self.heading, (int, float, Constant))):
+			heading = self.heading.sample()
+		if not (isinstance(self.angle, (int, float, Constant))):
+			angle = self.angle.sample()
+
+		# center, radius = self.center, self.radius
 		ctr = shapely.geometry.Point(center)
 		circle = ctr.buffer(radius, resolution=self.resolution)
-		if self.angle >= math.tau - 0.001:
+		if angle >= math.tau - 0.001:
 			return circle
 		else:
-			heading = self.heading
-			half_angle = self.angle / 2
+			# heading = self.heading
+			# half_angle = self.angle / 2
+			half_angle = angle / 2
 			mask = shapely.geometry.Polygon([
 			    center,
 			    center.offsetRadially(radius, heading + half_angle),
@@ -839,11 +861,11 @@ class PolylineRegion(Region):
 
 	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug = False):
 		if debug:
-			writeSMTtoFile(smt_file_path, "PolyLineRegion")
+			print( "PolyLineRegion")
 
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "PolyLineRegion already cached")
+				print( "PolyLineRegion already cached")
 			return cached_variables[self]
 
 		if smt_var is None:
@@ -1078,14 +1100,14 @@ class PolygonalRegion(Region):
 
 	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False):
 		if debug:
-			writeSMTtoFile(smt_file_path, "Class PolygonalRegion")
+			print( "Class PolygonalRegion")
 
 		import shapely.geometry.polygon as polygon
 		assert(not isinstance(self.polygons, polygon.Polygon))
 
 		if self in set(cached_variables.keys()):
 			if debug:
-				writeSMTtoFile(smt_file_path, "PolygonalRegion ALREADY EXISTS IN CACHED_VARIABLES")
+				print( "PolygonalRegion ALREADY EXISTS IN CACHED_VARIABLES")
 			return cached_variables[self]
 
 		if smt_var is None:
@@ -1391,11 +1413,11 @@ class IntersectionRegion(Region):
 
 	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False):
 		if debug:
-			writeSMTtoFile(smt_file_path, "IntersectionRegion")
+			print( "IntersectionRegion")
 			
 		if self in cached_variables.keys():
 			if debug:
-				writeSMTtoFile(smt_file_path, "IntersectionRegion already exists in cached_variables")
+				print( "IntersectionRegion already exists in cached_variables")
 			output_var = cached_variables[self]
 			return output_var
 

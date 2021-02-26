@@ -179,7 +179,7 @@ class TypecheckedDistribution(Distribution):
 
 		if self in set(cached_variables.keys()):
 			if debug:
-				writeSMTtoFile(smt_file_path, "TypecheckedDistribution already cached: "+str(self.dist))
+				print("TypecheckedDistribution already cached: "+str(self.dist))
 			return cached_variables[self]
 
 		output_var = self.dist.encodeToSMT(smt_file_path, cached_variables, debug = debug)

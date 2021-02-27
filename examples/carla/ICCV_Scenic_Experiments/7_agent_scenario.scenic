@@ -8,7 +8,7 @@ ped = Pedestrian on visible road, apparently facing Range(-10,10) deg from car1,
 	with regionContainedIn None
 car2 = Car behind ego by Range(4, 10)
 car3 = Car left of ego by Range(4,6), facing toward car1
-Cone right of car3 by Range(2,3)
+Pedestrian right of car3 by Range(2,3)
 Bicycle beyond car1 by Range(-1,1) @ Range(2,5),
 	with regionContainedIn None 
 

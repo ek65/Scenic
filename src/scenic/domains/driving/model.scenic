@@ -31,22 +31,63 @@ user uses the :option:`--param` command-line option to specify the map.
 from abc import ABC, abstractmethod
 
 from scenic.domains.driving.workspace import DrivingWorkspace
-from scenic.domains.driving.roads import ManeuverType, Network, Lane, LaneSection, Road, Sidewalk, Intersection, Shoulder
+from scenic.domains.driving.roads import ManeuverType, Network
 from scenic.domains.driving.actions import *
 from scenic.domains.driving.behaviors import *
 
 from scenic.core.distributions import RejectionException
 from scenic.simulators.utils.colors import Color
 
+import pickle
+from nuscenes.map_expansion.map_api import NuScenesMap
+from scenic.core.vectors import VectorField
+import numpy as np
+
 ## Load map and set up workspace
 
-if 'map' not in globalParameters:
-    raise RuntimeError('need to specify map before importing driving model '
-                       '(set the global parameter "map")')
-param map_options = {}
+# if 'map' not in globalParameters:
+#     raise RuntimeError('need to specify map before importing driving model '
+#                        '(set the global parameter "map")')
+if 'map_options' not in globalParameters:
+    param map_options = {}
+
+network = Network.fromPickle('/Users/edwardkim/Desktop/Scenic_Query/Scenic/src/scenic/domains/driving/boston-network.pickle')
+
+dataroot = '/Users/edwardkim/Desktop/Scenic_Query/nuscenes_data'
+map_api = NuScenesMap(dataroot=dataroot, map_name='boston-seaport')
+
+def get_traffic_flow(point):
+    lane_token = map_api.record_on_point(point.x, point.y, 'lane')
+
+    if lane_token == '':
+        return 0
+
+    lane_rec = map_api.get('lane', lane_token)
+
+    from_edge = map_api.get('line', lane_rec['from_edge_line_token'])
+    to_edge = map_api.get('line', lane_rec['to_edge_line_token'])
+
+    from_nodes = [map_api.get('node', t) for t in from_edge['node_tokens']]
+    from_nodes = [np.array([n['x'], n['y']]) for n in from_nodes]
+    to_nodes = [map_api.get('node', t) for t in to_edge['node_tokens']]
+    to_nodes = [np.array([n['x'], n['y']]) for n in to_nodes]
+
+    # Compute traffic flow vector using midpoints of edges
+    from_mid = (from_nodes[0] + from_nodes[1]) / 2
+    to_mid = (to_nodes[0] + to_nodes[1]) / 2
+    traffic_flow_vec = to_mid - from_mid
+
+    heading = np.arctan2(traffic_flow_vec[1], traffic_flow_vec[0])
+    output = heading + (np.pi /2)
+
+    return output
+
+network.roadDirection = VectorField('roadDirection', get_traffic_flow)
 
 #: The road network being used for the scenario, as a `Network` object.
-network : Network = Network.fromFile(globalParameters.map, **globalParameters.map_options)
+# network : Network = Network.fromFile(globalParameters.map, **globalParameters.map_options)
+network: Network = network
+
 workspace = DrivingWorkspace(network)
 
 ## Various useful objects and regions
@@ -54,26 +95,27 @@ workspace = DrivingWorkspace(network)
 #: The union of all drivable roads, including intersections but not shoulders
 #: or parking lanes.
 road : Region = Uniform(*network.roads)
-roadRegion : Region = network.roadRegion
+
+lane : Region = Uniform(*network.lanes)
+
+laneSection : Region = Uniform(*network.lanes)
+
+laneGroup : Region = Uniform(*network.laneGroups)
 
 #: The union of all curbs.
 curb : Region = network.curbRegion
 
-#: The union of all curbs.
-lane : Lane = Uniform(*network.lanes)
-laneSection : LaneSection = Uniform(*network.laneSections)
-
 #: The union of all sidewalks.
-sidewalk : Sidewalk = Uniform(*network.sidewalks)
+sidewalk : Region = network.sidewalkRegion
 
 #: The union of all shoulders, including parking lanes.
-shoulder : Shoulder = Uniform(*network.shoulders)
+shoulder : Region = network.shoulderRegion
 
 #: All drivable areas, including both ordinary roads and shoulders.
 roadOrShoulder : Region = road.union(shoulder)
 
 #: The union of all intersections.
-intersection : Intersection = Uniform(*network.intersections)
+intersection : Region = Uniform(*network.intersections)
 
 #: A :obj:`VectorField` representing the nominal traffic direction at a given point.
 #:
@@ -104,6 +146,7 @@ class DrivingObject:
     """
 
     elevation[dynamic]: None
+
     requireVisible: False
 
     # Convenience properties
@@ -253,7 +296,7 @@ class Vehicle(DrivingObject):
     regionContainedIn: roadOrShoulder
     position: Point on road
     heading: (roadDirection at self.position) + self.roadDeviation
-    roadDeviation: Range(-15,15) deg
+    roadDeviation: 0
     viewAngle: 90 deg
     width: 2
     length: 4.5
@@ -279,7 +322,7 @@ class Pedestrian(DrivingObject):
         color: The default color is turquoise. Pedestrian colors are not necessarily
             used by simulators, but do appear in the debugging diagram.
     """
-    regionContainedIn: network.walkableRegion
+    regionContainedIn: None
     position: Point on network.walkableRegion
     heading: Range(0, 360) deg
     viewAngle: 90 deg
@@ -360,14 +403,11 @@ def withinDistanceToObjsInLane(vehicle, thresholdDistance):
     for obj in objects:
         if not (vehicle can see obj):
             continue
+        if not (network.laneAt(vehicle) == network.laneAt(obj) or network.intersectionAt(vehicle)==network.intersectionAt(obj)):
+            continue
         if (distance from vehicle.position to obj.position) < 0.1:
             # this means obj==vehicle
-            continue
-        inter = network.intersectionAt(vehicle)
-        if inter and inter != network.intersectionAt(obj):    # different intersections
-            continue
-        if not inter and network.laneAt(vehicle) != network.laneAt(obj):    # different lanes
-            continue
-        if (distance from vehicle to obj) < thresholdDistance:
+            pass
+        elif (distance from vehicle.position to obj.position) < thresholdDistance:
             return True
     return False

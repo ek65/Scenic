@@ -228,6 +228,10 @@ def encodePolygonalRegion_SMT(smt_file_path, cached_variables, triangles, smt_va
 		# 	print( "p2: "+str(p2))
 
 	if debug:
+		ego_polygon = cached_variables['regionAroundEgo_polygon']
+		plt.plot(*ego_polygon.exterior.xy, color = 'r')
+		center = regionAroundEgo
+		plt.plot(center.x, center.y, color='ro')
 		plt.show()
 
 	final_smt_encoding = smt_assert(None, cumulative_smt_encoding)

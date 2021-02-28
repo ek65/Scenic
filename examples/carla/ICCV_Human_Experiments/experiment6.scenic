@@ -1,6 +1,6 @@
 param map = localPath('../../tests/formats/opendrive/maps/CARLA/Town05.xodr') 
 param carla_map = 'Town05'
-model scenic.domains.driving.model
+model scenic.domains.driving.model_nusc
 
 ego = Car on road
 

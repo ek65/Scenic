@@ -5,7 +5,9 @@ On the opposite lane, there are two cars in a line, where
 one car is ahead of other by 20 to 40 meters
 """
 
-model scenic.domains.driving.model
+param map = localPath('../../tests/formats/opendrive/maps/CARLA/Town05.xodr') 
+param carla_map = 'Town05'
+model scenic.domains.driving.model_nusc
 
 # parse out roads with two lanes, with opposite traffic directions
 ego = Car on road, facing Range(-15, 15) deg relative to roadDirection

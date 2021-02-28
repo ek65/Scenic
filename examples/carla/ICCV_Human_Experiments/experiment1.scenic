@@ -5,7 +5,7 @@ and the pedestrian's heading angle differs from ego's heading by 80 degrees or m
 
 param map = localPath('../../../tests/formats/opendrive/maps/CARLA/Town05.xodr') 
 param carla_map = 'Town05'
-model scenic.domains.driving.model
+model scenic.domains.driving.model_nusc
 
 ego = Car on road, facing Range(-15,15) deg relative to roadDirection
 ped = Pedestrian on Uniform(*network.intersections, *network.roads), facing Range(0,360) deg

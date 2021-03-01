@@ -273,11 +273,11 @@ class PointInRegionDistribution(VectorDistribution):
 			self.region.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False, encode=True):
 		if debug:
 			print( "PointInRegionDistribution")
 
-		if self in cached_variables.keys():
+		if encode and self in cached_variables.keys():
 			if debug:
 				print( "PointInRegionDistribution already cached")
 			return cached_variables[self]
@@ -316,8 +316,11 @@ class PointInRegionDistribution(VectorDistribution):
 
 		elif isinstance(region, Options):
 			import scenic.domains.driving.roads as roads
-			if region._conditioned.checkOptionsType(roads.NetworkElement):
+			if encode and region._conditioned.checkOptionsType(roads.NetworkElement):
 				region.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+			elif not encode and region._conditioned.checkOptionsType(roads.NetworkElement):
+				optionRegions = region.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode = encode)
+				return optionRegions
 			else:
 				raise NotImplementedError
 

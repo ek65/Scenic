@@ -175,7 +175,7 @@ class TypecheckedDistribution(Distribution):
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		if debug:
-			writeSMTtoFile(smt_file_path, "TypecheckedDistribution")
+			print("TypecheckedDistribution")
 
 		if self in set(cached_variables.keys()):
 			if debug:

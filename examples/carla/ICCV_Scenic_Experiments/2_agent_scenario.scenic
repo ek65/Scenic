@@ -2,8 +2,12 @@ param map = localPath('../../../tests/formats/opendrive/maps/CARLA/Town05.xodr')
 param carla_map = 'Town05'
 model scenic.simulators.carla.model #located in scenic/simulators/carla/model.scenic
 
-ego = Car on laneSection, facing Range(-10, 10) deg relative to roadDirection
-car = Car ahead of ego by Range(3, 5),
-	facing Normal(-10,10) deg relative to roadDirection
+# ego = Car on laneSection, facing Range(-10, 10) deg relative to roadDirection
+# car = Car ahead of ego by Range(3, 5),
+# 	facing Normal(-10,10) deg relative to roadDirection
 
-require abs(apparent heading of car from ego) < 20 deg
+spot = OrientedPoint on road
+ego = Car ahead of spot by Range(2,3)
+		# facing Range(-10,10) deg relative to roadDirection
+Car behind spot by Range(3,5)
+		# facing toward ego

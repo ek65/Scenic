@@ -923,7 +923,6 @@ class MethodDistribution(Distribution):
 		assert(len(refinedCenterlinePts) >= 2)
 		return refinedCenterlinePts
 
-
 	# find line perpendicular to the centerline segment & pass through the centerline point
 	def encodeHeading(self, cached_variables, elems, smt_file_path, smt_var, heading_var, debug=False):
 		import shapely.geometry
@@ -932,65 +931,68 @@ class MethodDistribution(Distribution):
 
 		if debug:
 			print("encodeHeading()")
+			print("elems: ", elems)
 
 		smt_encoding = None
 		regionAroundEgo = cached_variables['regionAroundEgo']
 		for elem in elems:
-			centerlinePts = [pt for pt in elem.centerline.points if regionAroundEgo.containsPoint(vectors.Vector(pt[0],pt[1]))]
-			
 			if debug:
 				print("len(elem.centerline.points): ", len(elem.centerline.points))
-				print("original len(centerlinePts): ", len(centerlinePts))
+				
+			if len(elem.centerline.points) > 2:
+				centerlinePts = [pt for pt in elem.centerline.points if regionAroundEgo.containsPoint(vectors.Vector(pt[0],pt[1]))]
+				
+				if debug:
+					print("original len(centerlinePts): ", len(centerlinePts))
 
-			if len(centerlinePts) == 1:
-				index = elem.centerline.points.index(centerlinePts[0])
-				if index < len(elem.centerline.points)-1:
-					centerlinePts.append(elem.centerline.points[index+1])
-				else:
-					centerlinePts.append(elem.centerline.points[index-1])
-			assert(len(centerlinePts) >= 2)
+				if len(centerlinePts) == 1:
+					index = elem.centerline.points.index(centerlinePts[0])
+					if index < len(elem.centerline.points)-1:
+						centerlinePts.append(elem.centerline.points[index+1])
+					else:
+						centerlinePts.append(elem.centerline.points[index-1])
+				# assert(len(centerlinePts) >= 2)
 
-			centerlinePts = self.refineCenterlinePts(centerlinePts)
+				if len(centerlinePts) > 0:
+					centerlinePts = self.refineCenterlinePts(centerlinePts)
+			else:
+				centerlinePts = elem.centerline.points
 	        
 			if debug:
 				print("refined len(centerlinePts): ",len(centerlinePts))
-				# if isinstance(elem.polygon, shapely.geometry.multipolygon.MultiPolygon):
-				# 	for e in elem.polygon.geoms:
-				# 		plt.plot(*e.exterior.xy)
-				# else:
-				# 	plt.plot(*elem.polygon.exterior.xy)
-				# for pt in centerlinePts:
-				# 	[x1,y1] = pt
-				# 	plt.plot(x1,y1,'ko')
-				# plt.show()
 
+			offset_distance = math.sqrt(math.pow(elem.leftEdge.points[0][0]-elem.rightEdge.points[0][0],2)+\
+								math.pow(elem.leftEdge.points[0][1]-elem.rightEdge.points[0][1],2))/2 + 5
 			for i in range(len(centerlinePts)-1):
 		        # find the previous two points
 				if i==0:
-					prevLeftPt = self.findNearestEdgePoint(elem.leftEdge)
-					prevRightPt = self.findNearestEdgePoint(elem.rightEdge)
 					prevCenterPt = centerlinePts[0]
+					center_point = shapely.geometry.Point(prevCenterPt[0],prevCenterPt[1])
+					# prevLeftPt = self.findNearestEdgePoint(elem.leftEdge, center_point)
+					# prevRightPt = self.findNearestEdgePoint(elem.rightEdge, center_point)
 
-				# if i < len(centerlinePts)-2 and \
-				# 	abs(slopes_dict[tuple(centerlinePts[i])] - slopes_dict[tuple(centerlinePts[i+1])]) < 0.1:
-				# 	continue
-
-				[x1,y1] = [prevCenterPt[0], prevCenterPt[1]]
-				[x2,y2] = [centerlinePts[i+1][0], centerlinePts[i+1][1]]
-				slope = float(y2-y1)/float(x2-x1)
-				offset_distance = math.sqrt(math.pow(prevLeftPt[0]-prevRightPt[0],2)+math.pow(prevLeftPt[1]-prevRightPt[1],2))/2 + 5
-
+				x1,y1 = [prevCenterPt[0], prevCenterPt[1]]
+				x2,y2 = [centerlinePts[i+1][0], centerlinePts[i+1][1]]
+				
+				if x2 == x1:
+					slope = 100
+				else:
+					slope = float(y2-y1)/float(x2-x1)
+				
 				if abs(slope) > 20:
-					perpendicular_slope = 0
-					bias = y2
-
 					# find two points on the perpendicular line
 					left_x, right_x = x2 - offset_distance, x2 + offset_distance
-					left_y, right_y = bias, bias
+					left_y, right_y = y2, y2
+					if i == 0:
+						prevLeftPt = [x1 - offset_distance, y1]
+						prevRightPt = [x1 + offset_distance, y1]
 
 				elif abs(slope) < 0.2:
 					left_x, right_x = x2, x2
 					left_y, right_y = y2 - offset_distance, y2 + offset_distance
+					if i == 0:
+						prevLeftPt = [x1, y1 - offset_distance]
+						prevRightPt = [x1, y1 + offset_distance]
 
 				else:
 					perpendicular_slope = -1 / float(slope)
@@ -998,6 +1000,13 @@ class MethodDistribution(Distribution):
 					left_x, right_x = x2 - offset_distance, x2 + offset_distance
 					left_y = perpendicular_slope * left_x + bias
 					right_y = perpendicular_slope * right_x + bias
+					if i == 0:
+						bias = y1 - perpendicular_slope * x1
+						left_x0, right_x0 = x1 - offset_distance, x1 + offset_distance
+						left_y0 = perpendicular_slope * left_x + bias
+						right_y0 = perpendicular_slope * right_x + bias
+						prevLeftPt = [left_x0, left_y0]
+						prevRightPt = [right_x0, right_y0]
 
 				left_pt = (left_x, left_y)
 				right_pt = (right_x, right_y)
@@ -1010,9 +1019,15 @@ class MethodDistribution(Distribution):
 					else:
 						plt.plot(*elem.polygon.exterior.xy)
 					for pt in centerlinePts:
-						[x1,y1] = pt
-						plt.plot(x1,y1,'ko')
-					plt.plot(*line.coords.xy, 'rx')
+						[x,y] = pt
+						plt.plot(x,y,'ko')
+					plt.plot(prevLeftPt[0], prevLeftPt[1], 'rx')
+					plt.plot(prevRightPt[0], prevRightPt[1], 'rx')
+					plt.plot(x1, y1,'ro')
+					plt.plot(left_x, left_y, 'bx')
+					plt.plot(right_x, right_y, 'bx')
+					plt.plot(x2, y2, 'go')
+					# plt.plot([left_x, right_x],[left_y, right_y], 'r-')
 					# plt.show()
 
 				intersect_leftPt = elem.leftEdge.lineString.intersection(line)
@@ -1046,7 +1061,7 @@ class MethodDistribution(Distribution):
 				# cache previous points
 				prevLeftPt = leftPt
 				prevRightPt = rightPt
-				prevCenterPt = centerlinePts[i]
+				prevCenterPt = centerlinePts[i+1]
 
 				# encode heading smt with ite
 				joint_smt = smt_and(leftOf_smt, rightOf_smt)
@@ -1070,14 +1085,13 @@ class MethodDistribution(Distribution):
 				    # print("nextCenterPt: ", centerlinePts[i+1])
 					if i%2==0:
 						color1 = 'ro'
-						color2 = 'bo'
+						color2 = 'kx'
 					else:
 						color1 = 'gx'
 						color2 = 'kx'
 					# plt.plot([left_x, right_x], [left_y, right_y], 'o-')
 					plt.plot(intersect_leftPt.x, intersect_leftPt.y, color2)
 					plt.plot(intersect_rightPt.x, intersect_rightPt.y, color2)
-					plt.plot([x1],[y1],'go')
 					plt.show()
 			if debug:
 				# plt.show()
@@ -1108,7 +1122,7 @@ class MethodDistribution(Distribution):
 	#     writeSMTtoFile(smt_file_path, smt_encoding)
 	    return smt_encoding
 
-	def findNearestEdgePoint(self, edge):
+	def findNearestEdgePoint(self, edge, point):
 		min_dist = 10000
 		index, nearest_pt = None, None
 		for pt in edge.points:
@@ -1129,7 +1143,7 @@ class MethodDistribution(Distribution):
 
 		if elems.is_empty:
 			# pick the edge point nearest to the given point
-			nearest_pt = self.findNearestEdgePoint(edge)
+			nearest_pt = self.findNearestEdgePoint(edge, point)
 			return shapely.geometry.Point(nearest_pt)
 		elif isinstance(elems, shapely.geometry.MultiPoint):
 			multiPts = list(elems.geoms)
@@ -1142,7 +1156,6 @@ class MethodDistribution(Distribution):
 		for pt in multiPts:
 			dist.append(pt.distance(point))
 		return multiPts[dist.index(min(dist))]
-	
 
 	def conditionforSMT(self, condition, conditioned_bool):
 		if isinstance(self.object, Samplable) and not isConditioned(self.object):
@@ -1531,18 +1544,32 @@ class OperatorDistribution(Distribution):
 							return cacheVarName(cached_variables, self, output)
 					return None
 
-				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
-				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
-				smt_var = (x,y)
-				regionAroundEgo = cached_variables['regionAroundEgo_polygon']
+				smt_var = None
+				if self.object in cached_variables.keys():
+					smt_var = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=True)
+				else:
+					x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+					y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+					smt_var = (x,y)
+					regionAroundEgo = cached_variables['regionAroundEgo_polygon']
 
-				import scenic.core.regions as regions
-				for reg in optionsRegion.options:
-					# reg_point = reg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
-					# (x_cond, y_cond) = vector_operation_smt(reg_point, "equal", smt_var)
-					# writeSMTtoFile(smt_file_path, smt_assert(None, smt_and(x_cond, y_cond)))
-					polygonRegion = regions.regionFromShapelyObject(regionAroundEgo.intersection(reg.polygon))
-					polygonRegion.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+					import shapely.geometry
+					import scenic.core.regions as regions
+					polygonalRegions = []
+					for elem in optionsRegion.options:
+						intersection = elem.polygon.intersection(regionAroundEgo)
+						if isinstance(intersection, shapely.geometry.multipolygon.MultiPolygon):
+							for geom in intersection.geoms:
+								polygonalRegions.append(geom)
+						elif isinstance(intersection, shapely.geometry.polygon.Polygon):
+							polygonalRegions.append(intersection)
+						else:
+							print("elem: ", intersection)
+							raise NotImplementedError
+
+					multipolygon = shapely.geometry.multipolygon.MultiPolygon(polygonalRegions)
+					polygonReg = regions.regionFromShapelyObject(multipolygon)
+					polygonReg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
 
 				heading_var = output
 				elems = optionsRegion.options
@@ -1607,76 +1634,68 @@ class OperatorDistribution(Distribution):
 
 		if debug:
 			print("encodeHeading()")
+			print("elems: ", elems)
 
 		smt_encoding = None
 		regionAroundEgo = cached_variables['regionAroundEgo']
 		for elem in elems:
-			centerlinePts = [pt for pt in elem.centerline.points if regionAroundEgo.containsPoint(vectors.Vector(pt[0],pt[1]))]
-			
 			if debug:
 				print("len(elem.centerline.points): ", len(elem.centerline.points))
-				print("original len(centerlinePts): ", len(centerlinePts))
 
-			if len(centerlinePts) == 1:
-				index = elem.centerline.points.index(centerlinePts[0])
-				if index < len(elem.centerline.points)-1:
-					centerlinePts.append(elem.centerline.points[index+1])
-				else:
-					centerlinePts.append(elem.centerline.points[index-1])
-			assert(len(centerlinePts) >= 2)
+			if len(elem.centerline.points) > 2:
+				centerlinePts = [pt for pt in elem.centerline.points if regionAroundEgo.containsPoint(vectors.Vector(pt[0],pt[1]))]
+				
+				if debug:
+					print("original len(centerlinePts): ", len(centerlinePts))
 
-			centerlinePts = self.refineCenterlinePts(centerlinePts)
+				if len(centerlinePts) == 1:
+					index = elem.centerline.points.index(centerlinePts[0])
+					if index < len(elem.centerline.points)-1:
+						centerlinePts.append(elem.centerline.points[index+1])
+					else:
+						centerlinePts.append(elem.centerline.points[index-1])
+				# assert(len(centerlinePts) >= 2)
+
+				if len(centerlinePts) > 0:
+					centerlinePts = self.refineCenterlinePts(centerlinePts)
+			else:
+				centerlinePts = elem.centerline.points
 	        
 			if debug:
 				print("refined len(centerlinePts): ",len(centerlinePts))
-				# if isinstance(elem.polygon, shapely.geometry.multipolygon.MultiPolygon):
-				# 	for e in elem.polygon.geoms:
-				# 		plt.plot(*e.exterior.xy)
-				# else:
-				# 	plt.plot(*elem.polygon.exterior.xy)
-				# for pt in centerlinePts:
-				# 	[x1,y1] = pt
-				# 	plt.plot(x1,y1,'ko')
-				# plt.show()
 
+			offset_distance = math.sqrt(math.pow(elem.leftEdge.points[0][0]-elem.rightEdge.points[0][0],2)+\
+								math.pow(elem.leftEdge.points[0][1]-elem.rightEdge.points[0][1],2))/2 + 5
 			for i in range(len(centerlinePts)-1):
 		        # find the previous two points
 				if i==0:
 					prevCenterPt = centerlinePts[0]
 					center_point = shapely.geometry.Point(prevCenterPt[0],prevCenterPt[1])
-					prevLeftPt = self.findNearestEdgePoint(elem.leftEdge, center_point)
-					prevRightPt = self.findNearestEdgePoint(elem.rightEdge, center_point)
+					# prevLeftPt = self.findNearestEdgePoint(elem.leftEdge, center_point)
+					# prevRightPt = self.findNearestEdgePoint(elem.rightEdge, center_point)
 
-					if debug:
-						if isinstance(elem.polygon, shapely.geometry.multipolygon.MultiPolygon):
-							for e in elem.polygon.geoms:
-								plt.plot(*e.exterior.xy)
-						else:
-							plt.plot(*elem.polygon.exterior.xy)
-						for pt in centerlinePts:
-							[x1,y1] = pt
-							plt.plot(x1,y1,'ko')
-						plt.plot(prevLeftPt[0], prevLeftPt[1], 'bo')
-						plt.plot(prevRightPt[0], prevRightPt[1], 'bo')
-						plt.plot(prevCenterPt[0], prevCenterPt[1],'go')
-						plt.show()
-
-				[x1,y1] = [prevCenterPt[0], prevCenterPt[1]]
-				[x2,y2] = [centerlinePts[i+1][0], centerlinePts[i+1][1]]
-				slope = float(y2-y1)/float(x2-x1)
-				offset_distance = math.sqrt(math.pow(prevLeftPt[0]-prevRightPt[0],2)+math.pow(prevLeftPt[1]-prevRightPt[1],2))/2 + 5
-
+				x1,y1 = [prevCenterPt[0], prevCenterPt[1]]
+				x2,y2 = [centerlinePts[i+1][0], centerlinePts[i+1][1]]
+				
+				if x2 == x1:
+					slope = 100
+				else:
+					slope = float(y2-y1)/float(x2-x1)
+				
 				if abs(slope) > 20:
-					perpendicular_slope = 0
-					bias = y2
-
 					# find two points on the perpendicular line
 					left_x, right_x = x2 - offset_distance, x2 + offset_distance
-					left_y, right_y = bias, bias
+					left_y, right_y = y2, y2
+					if i == 0:
+						prevLeftPt = [x1 - offset_distance, y1]
+						prevRightPt = [x1 + offset_distance, y1]
 
 				elif abs(slope) < 0.2:
 					left_x, right_x = x2, x2
 					left_y, right_y = y2 - offset_distance, y2 + offset_distance
+					if i == 0:
+						prevLeftPt = [x1, y1 - offset_distance]
+						prevRightPt = [x1, y1 + offset_distance]
 
 				else:
 					perpendicular_slope = -1 / float(slope)
@@ -1684,6 +1703,13 @@ class OperatorDistribution(Distribution):
 					left_x, right_x = x2 - offset_distance, x2 + offset_distance
 					left_y = perpendicular_slope * left_x + bias
 					right_y = perpendicular_slope * right_x + bias
+					if i == 0:
+						bias = y1 - perpendicular_slope * x1
+						left_x0, right_x0 = x1 - offset_distance, x1 + offset_distance
+						left_y0 = perpendicular_slope * left_x + bias
+						right_y0 = perpendicular_slope * right_x + bias
+						prevLeftPt = [left_x0, left_y0]
+						prevRightPt = [right_x0, right_y0]
 
 				left_pt = (left_x, left_y)
 				right_pt = (right_x, right_y)
@@ -1696,9 +1722,15 @@ class OperatorDistribution(Distribution):
 					else:
 						plt.plot(*elem.polygon.exterior.xy)
 					for pt in centerlinePts:
-						[x1,y1] = pt
-						plt.plot(x1,y1,'ko')
-					plt.plot(*line.coords.xy, 'r-')
+						[x,y] = pt
+						plt.plot(x,y,'ko')
+					plt.plot(prevLeftPt[0], prevLeftPt[1], 'rx')
+					plt.plot(prevRightPt[0], prevRightPt[1], 'rx')
+					plt.plot(x1, y1,'ro')
+					plt.plot(left_x, left_y, 'bx')
+					plt.plot(right_x, right_y, 'bx')
+					plt.plot(x2, y2, 'go')
+					# plt.plot([left_x, right_x],[left_y, right_y], 'r-')
 					# plt.show()
 
 				intersect_leftPt = elem.leftEdge.lineString.intersection(line)
@@ -1732,7 +1764,7 @@ class OperatorDistribution(Distribution):
 				# cache previous points
 				prevLeftPt = leftPt
 				prevRightPt = rightPt
-				prevCenterPt = centerlinePts[i]
+				prevCenterPt = centerlinePts[i+1]
 
 				# encode heading smt with ite
 				joint_smt = smt_and(leftOf_smt, rightOf_smt)
@@ -1756,14 +1788,13 @@ class OperatorDistribution(Distribution):
 				    # print("nextCenterPt: ", centerlinePts[i+1])
 					if i%2==0:
 						color1 = 'ro'
-						color2 = 'bo'
+						color2 = 'kx'
 					else:
 						color1 = 'gx'
 						color2 = 'kx'
 					# plt.plot([left_x, right_x], [left_y, right_y], 'o-')
 					plt.plot(intersect_leftPt.x, intersect_leftPt.y, color2)
 					plt.plot(intersect_rightPt.x, intersect_rightPt.y, color2)
-					plt.plot([x1],[y1],'go')
 					plt.show()
 			if debug:
 				# plt.show()

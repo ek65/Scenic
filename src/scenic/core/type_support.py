@@ -177,13 +177,14 @@ class TypecheckedDistribution(Distribution):
 		if debug:
 			print("TypecheckedDistribution")
 
-		if self in set(cached_variables.keys()):
-			if debug:
-				print("TypecheckedDistribution already cached: "+str(self.dist))
-			return cached_variables[self]
+		# if self in set(cached_variables.keys()):
+		# 	if debug:
+		# 		print("TypecheckedDistribution already cached: "+str(self.dist))
+		# 	return cached_variables[self]
 
 		output_var = self.dist.encodeToSMT(smt_file_path, cached_variables, debug = debug)
-		return cacheVarName(cached_variables, self, output_var)
+		# return cacheVarName(cached_variables, self, output_var)
+		return output_var
 
 	def sampleGiven(self, value):
 		val = value[self.dist]

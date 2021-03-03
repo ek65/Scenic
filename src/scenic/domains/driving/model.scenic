@@ -75,6 +75,7 @@ roadOrShoulder : Region = roadRegion.union(shoulder)
 
 #: The union of all intersections.
 intersection : Region = Uniform(*network.intersections)
+intersectionRegion : Region = network.intersectionRegion
 
 #: A :obj:`VectorField` representing the nominal traffic direction at a given point.
 #:

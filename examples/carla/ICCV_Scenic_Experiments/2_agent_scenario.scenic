@@ -6,8 +6,10 @@ model scenic.simulators.carla.model #located in scenic/simulators/carla/model.sc
 # car = Car ahead of ego by Range(3, 5),
 # 	facing Normal(-10,10) deg relative to roadDirection
 
-spot = OrientedPoint on road
-ego = Car ahead of spot by Range(2,3)
-		# facing Range(-10,10) deg relative to roadDirection
-Car behind spot by Range(3,5)
-		# facing toward ego
+spot = OrientedPoint on laneSection
+ego = Car left of spot by Range(2,3),
+		facing Range(-10,10) deg relative to roadDirection
+Car behind spot by Range(3,5),
+		facing toward ego
+
+require (distance to intersectionRegion) > 10

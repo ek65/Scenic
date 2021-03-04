@@ -242,6 +242,295 @@ def cacheVarName(cached_variables, obj, var_names):
 	cached_variables[obj] = var_names
 	return var_names
 
+
+def refineCenterlinePts(centerlinePts, elem, intersection):
+	import scenic.core.vectors as vectors
+	import shapely.geometry
+
+	refinedCenterlinePts = []
+	if len(centerlinePts) == 0:
+
+		# find the two points closest to the intersection 
+		distance = [shapely.geometry.point.Point(pt[0],pt[1]).distance(intersection) for pt in elem.centerline.points]
+		centerlinePts = [elem.centerline.points[i] for i in range(len(distance)) if distance[i] < 5]
+		if len(centerlinePts) == 0:
+			return None
+
+	if len(centerlinePts) == 1:
+		if centerlinePts[0] == elem.centerline.points[0]:
+			centerlinePts.append(elem.centerline.points[1])
+			return centerlinePts
+		else:
+			index = elem.centerline.points.index(centerlinePts[0])
+			return elem.centerline.points[index-1:index+2]
+	
+	prev_heading = None # (key, value) = (point, slope with the next point), last point's slope is None
+	for i in range(len(centerlinePts)-1):
+		x1, y1 = centerlinePts[i]
+		x2, y2 = centerlinePts[i+1]
+		heading = vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2))
+		if i == len(centerlinePts)-2:
+			if (x1,y1) not in refinedCenterlinePts:
+				refinedCenterlinePts.append((x1,y1))
+				refinedCenterlinePts.append((x2,y2))
+				break
+
+		if prev_heading is None:
+			prev_heading = heading
+			refinedCenterlinePts.append((x1,y1))
+		else:
+			angle_difference = abs(heading-prev_heading)
+			if 0.0872 < angle_difference and angle_difference < math.pi/2: # radians (about 5 degrees)
+				refinedCenterlinePts.append((x1,y1))
+				prev_heading = heading
+			else:
+				continue
+	assert(len(refinedCenterlinePts)>=2)
+	return refinedCenterlinePts
+
+
+# find line perpendicular to the centerline segment & pass through the centerline point
+def encodeHeading(cached_variables, elems, smt_file_path, smt_var, heading_var, debug=False):
+	import shapely.geometry
+	import scenic.core.geometry as geometry
+	import scenic.core.vectors as vectors
+	import scenic.core.regions as regions
+
+	smt_encoding = None
+	regionAroundEgo = cached_variables['regionAroundEgo']
+
+	if debug:
+		print("encodeHeading()")
+		print("elems: ", elems)
+
+	for elem in elems:
+		if len(elem.centerline.points) > 2:
+			centerlinePts = [pt for pt in elem.centerline.points if regionAroundEgo.containsPoint(vectors.Vector(pt[0],pt[1]))]
+		else:
+			centerlinePts = elem.centerline.points
+
+		if debug:
+			print("len(elem.centerline.points): ", len(elem.centerline.points))
+			print("len(centerlinePts): ", len(centerlinePts))
+
+		if len(centerlinePts) == 1:
+			index = elem.centerline.points.index(centerlinePts[0])
+			if index < len(elem.centerline.points)-1:
+				centerlinePts.append(elem.centerline.points[index+1])
+			else:
+				centerlinePts.append(elem.centerline.points[index-1])
+		# assert(len(centerlinePts) >= 2)
+
+		intersection = elem.polygon.intersection(cached_variables['regionAroundEgo_polygon'])
+		centerlinePts = refineCenterlinePts(centerlinePts, elem, intersection)
+		if centerlinePts is None:
+			continue
+
+		if debug:
+			print("refined len(centerlinePts): ",len(centerlinePts))
+
+		offset_distance = math.sqrt(math.pow(elem.leftEdge.points[0][0]-elem.rightEdge.points[0][0],2)+\
+							math.pow(elem.leftEdge.points[0][1]-elem.rightEdge.points[0][1],2))/2 + 5
+		
+		for i in range(len(centerlinePts)-1):
+			# find the previous two points
+			if i==0:
+				prevCenterPt = centerlinePts[0]
+				center_point = shapely.geometry.Point(prevCenterPt[0],prevCenterPt[1])
+
+			x1,y1 = [prevCenterPt[0], prevCenterPt[1]]
+			x2,y2 = [centerlinePts[i+1][0], centerlinePts[i+1][1]]
+
+			if x2 == x1:
+				slope = 100
+			else:
+				slope = float(y2-y1)/float(x2-x1)
+
+			if abs(slope) > 20:
+			    # find two points on the perpendicular line
+				left_x, right_x = x2 - offset_distance, x2 + offset_distance
+				left_y, right_y = y2, y2
+				if i == 0:
+					prevLeftPt = [x1 - offset_distance, y1]
+					prevRightPt = [x1 + offset_distance, y1]
+
+			elif abs(slope) < 0.2:
+				left_x, right_x = x2, x2
+				left_y, right_y = y2 - offset_distance, y2 + offset_distance
+				if i == 0:
+					prevLeftPt = [x1, y1 - offset_distance]
+					prevRightPt = [x1, y1 + offset_distance]
+
+			else:
+				perpendicular_slope = -1 / float(slope)
+				bias = y2 - perpendicular_slope * x2
+				left_x, right_x = x2 - offset_distance, x2 + offset_distance
+				left_y = perpendicular_slope * left_x + bias
+				right_y = perpendicular_slope * right_x + bias
+				if i == 0:
+					bias = y1 - perpendicular_slope * x1
+					left_x0, right_x0 = x1 - offset_distance, x1 + offset_distance
+					left_y0 = perpendicular_slope * left_x + bias
+					right_y0 = perpendicular_slope * right_x + bias
+					prevLeftPt = [left_x0, left_y0]
+					prevRightPt = [right_x0, right_y0]
+
+			left_pt = (left_x, left_y)
+			right_pt = (right_x, right_y)
+			line = shapely.geometry.LineString([left_pt, right_pt])
+
+			intersect_leftPt = elem.leftEdge.lineString.intersection(line)
+			intersect_rightPt = elem.rightEdge.lineString.intersection(line)
+
+			if isinstance(intersect_leftPt, (shapely.geometry.MultiPoint, shapely.geometry.LineString)):
+				intersect_leftPt = findClosestPoint(intersect_leftPt, elem.leftEdge, \
+										    shapely.geometry.Point(x2, y2), debug = debug)
+			if isinstance(intersect_rightPt, (shapely.geometry.MultiPoint, shapely.geometry.LineString)):
+				intersect_rightPt = findClosestPoint(intersect_rightPt, elem.rightEdge, \
+											shapely.geometry.Point(x2, y2), debug = debug)
+			if isinstance(intersect_leftPt, shapely.geometry.point.Point):
+				intersect_leftPt = (intersect_leftPt.x, intersect_leftPt.y)
+			if isinstance(intersect_rightPt, shapely.geometry.point.Point):
+				intersect_rightPt = (intersect_rightPt.x, intersect_rightPt.y)
+
+			if i == 0:
+				line0 = shapely.geometry.LineString([prevLeftPt, prevRightPt])
+				prevLeftPt = elem.leftEdge.lineString.intersection(line0)
+				prevRightPt = elem.rightEdge.lineString.intersection(line0)
+
+				if isinstance(prevLeftPt, (shapely.geometry.MultiPoint, shapely.geometry.LineString)):
+					prevLeftPt = findClosestPoint(prevLeftPt, elem.leftEdge, \
+											    shapely.geometry.Point(x1, y1), debug = debug)
+				if isinstance(prevRightPt, (shapely.geometry.MultiPoint, shapely.geometry.LineString)):
+					prevRightPt = findClosestPoint(prevRightPt, elem.rightEdge, \
+												shapely.geometry.Point(x1, y1), debug = debug)
+				if isinstance(prevLeftPt, shapely.geometry.point.Point):
+					prevLeftPt = (prevLeftPt.x, prevLeftPt.y)
+				if isinstance(prevRightPt, shapely.geometry.point.Point):
+					prevRightPt = (prevRightPt.x, prevRightPt.y)
+
+			if debug:
+				if isinstance(elem.polygon, shapely.geometry.multipolygon.MultiPolygon):
+					for e in elem.polygon.geoms:
+						plt.plot(*e.exterior.xy)
+				else:
+					plt.plot(*elem.polygon.exterior.xy)
+				for pt in centerlinePts:
+					[x,y] = pt
+					plt.plot(x,y,'ko')
+
+				plt.plot(prevLeftPt[0], prevLeftPt[1], 'rx')
+				plt.plot(prevRightPt[0], prevRightPt[1], 'rx')
+				plt.plot(x1, y1,'ro')
+				plt.plot(left_x, left_y, 'bx')
+				plt.plot(right_x, right_y, 'bx')
+				plt.plot(x2, y2, 'go')
+				plt.plot(intersect_leftPt[0], intersect_leftPt[1], 'kx')
+				plt.plot(intersect_rightPt[0], intersect_rightPt[1], 'kx')
+				plt.show()
+
+			# find the intersecting left/right points with left & right edge of the elem
+			if i+1 < len(centerlinePts)-1:
+				leftPt = (intersect_leftPt[0], intersect_leftPt[1])
+				rightPt = (intersect_rightPt[0], intersect_rightPt[1])
+			else:
+				leftPt = elem.leftEdge.lineString.coords[-1]
+				rightPt = elem.rightEdge.lineString.coords[-1]
+
+			# encode a region left of the vector [prevLeftPt, prevRightPt]
+			leftOf_smt = encodeLeftRightOf(prevLeftPt, prevRightPt, smt_var, smt_file_path, side='left')
+
+			# encode a region right of the vector [leftPt, rightPt]
+			rightOf_smt = encodeLeftRightOf(leftPt, rightPt, smt_var, smt_file_path, side='right')
+
+			# encode a region right of [prevLeftPt, leftPt]
+			rightOf_smt2 = encodeLeftRightOf(prevLeftPt, leftPt, smt_var, smt_file_path, side='right')
+
+			# encode a region left of [prevRightPt, rightPt]
+			leftOf_smt2 = encodeLeftRightOf(prevRightPt, rightPt, smt_var, smt_file_path, side='left')
+
+			# cache previous points
+			prevLeftPt = leftPt
+			prevRightPt = rightPt
+			prevCenterPt = centerlinePts[i+1]
+
+			# encode heading smt with ite
+			joint_smt = smt_and(smt_and(leftOf_smt, rightOf_smt), smt_and(leftOf_smt2, rightOf_smt2))
+			heading = vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2))
+
+			if debug:
+				print("heading: ", heading)
+			if smt_encoding is None:
+				smt_encoding = smt_ite(joint_smt, str(heading), '-1000')
+			else:
+				smt_encoding = smt_ite(joint_smt, str(heading), smt_encoding)
+
+			assert(smt_encoding is not None)
+
+	if smt_encoding is not None:
+		writeSMTtoFile(smt_file_path, smt_assert("equal", heading_var , smt_encoding))
+		writeSMTtoFile(smt_file_path, smt_assert("not", smt_equal(heading_var, '-1000')))
+	return heading_var
+
+def encodeLeftRightOf(leftPt, rightPt, smt_var, smt_file_path, side):
+    """ D >= 0 : the point, (xp,yp), is on the left-hand side or the line 
+        D = (x2-x1) * (yp-y1) - (xp-x1) * (y2-y1)
+    """
+    (xp, yp) = smt_var
+    (x1,y1) = (str(leftPt[0]), str(leftPt[1]))
+    (x2,y2) = (str(rightPt[0]), str(rightPt[1]))
+    x2_x1 = smt_subtract(x2,x1)
+    yp_y1 = smt_subtract(yp,y1)
+    mult1 = smt_multiply(x2_x1, yp_y1)
+    xp_x1 = smt_subtract(xp,x1)
+    y2_y1 = smt_subtract(y2,y1)
+    mult2 = smt_multiply(xp_x1, y2_y1)
+    D = smt_subtract(mult1, mult2)
+    if side == 'left':
+        smt_encoding = smt_lessThanEq('0', D)
+    else:
+        smt_encoding = smt_lessThanEq(D ,'0')
+        
+#     writeSMTtoFile(smt_file_path, smt_encoding)
+    return smt_encoding
+
+def findNearestEdgePoint(edge, point):
+    min_dist = 10000
+    index, nearest_pt = None, None
+    for pt in edge.points:
+        x,y = pt
+        center_x, center_y = point.x, point.y
+        distance = math.sqrt(math.pow(center_x-x, 2)+math.pow(center_y-y,2))
+        if distance < min_dist:
+            min_dist = distance
+            nearest_pt = pt
+    return nearest_pt
+
+def findClosestPoint(elems, edge, point, debug=False):
+    import shapely.geometry
+
+    if debug:
+        print("findClosestPoint() elems: ", elems)
+        print("elems.is_empty: ", elems.is_empty)
+
+    if elems.is_empty:
+        # pick the edge point nearest to the given point
+        nearest_pt = findNearestEdgePoint(edge, point)
+        return shapely.geometry.Point(nearest_pt)
+    elif isinstance(elems, shapely.geometry.MultiPoint):
+        multiPts = list(elems.geoms)
+    elif isinstance(elems, shapely.geometry.LineString):
+        multiPts = [shapely.geometry.Point(*pt) for pt in elems.coords]
+    else:
+        raise NotImplementedError
+
+    dist = []
+    for pt in multiPts:
+        dist.append(pt.distance(point))
+    pt = multiPts[dist.index(min(dist))]
+    return (pt.x, pt.y)
+
+
 def isConditioned(obj):
 	return obj is not obj._conditioned
 
@@ -764,14 +1053,10 @@ class MethodDistribution(Distribution):
 		# import scenic.core.geometry as geometry
 		if debug:
 			print("MethodDistribution")
-			# writeSMTtoFile(smt_file_path, "method: "+str(self.method))
-			# writeSMTtoFile(smt_file_path, "type(method): "+str(type(self.method)))
-			# # writeSMTtoFile(smt_file_path, "object: "+str(self.object))
-			# writeSMTtoFile(smt_file_path, "type(object): "+str(type(self.object)))
-			# # writeSMTtoFile(smt_file_path, "arguments: "+str(self.arguments))
-			# for arg in self.arguments:
-			# 	writeSMTtoFile(smt_file_path, "type(argument): "+str(type(arg)))
-			# writeSMTtoFile(smt_file_path, "self.kwargs: "+str(self.kwargs))
+			print("self.method: ", self.method)
+			print("type(self.object): ", type(self.object))
+			for arg in self.arguments:
+				print("type(arg): ", type(arg))
 
 		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
 			return cacheVarName(cached_variables, self, self._conditioned)
@@ -835,13 +1120,16 @@ class MethodDistribution(Distribution):
 
 		elif self.method == vectors.VectorField.__getitem__:
 			assert(len(self.arguments)==1)
+			if debug:
+				print("type(self.arguments[0]): ", type(self.arguments[0]))
+				print("self.arguments[0]: ", self.arguments[0])
 
 			if isConditioned(self.arguments[0]) and isinstance(self.arguments[0]._conditioned, vectors.Vector):
 				vector = self.arguments[0]._conditioned
 				output = str(self.method(self.object, vector))
 				if debug:
 					print("MethodDistribution self.method == vectors.VectorField.__getitem__")
-					print("output")
+					print("output: ", output)
 				return cacheVarName(cached_variables, self, output)
 
 			optionsRegion = self.arguments[0].encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
@@ -852,310 +1140,30 @@ class MethodDistribution(Distribution):
 
 			assert(isinstance(optionsRegion, Options))
 
-			smt_var = None
-			if not self.arguments[0] in cached_variables.keys():
-				import scenic.core.regions as regions
-				import shapely.geometry
+			import scenic.core.vectors as vectors
+			if isConditioned(self.arguments[0]) and isinstance(self.arguments[0]._conditioned, vectors.Vector):
+				vector = self.arguments[0]._conditioned
+				for region in optionsRegion.options:
+					if region.containsPoint(vector):
+						heading = str(region.nominalDirectionsAt(vector))
+						writeSMTtoFile(smt_file_path, smt_assert("equal", heading, output))
+						return cacheVarName(cached_variables, self, output)
+				return None
 
-				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
-				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
-				smt_var = (x,y)
-
-				polygonalRegions = []
-				regionAroundEgo = cached_variables['regionAroundEgo_polygon']
-				for elem in optionsRegion.options:
-					if isinstance(elem.polygon, shapely.geometry.multipolygon.MultiPolygon):
-						for geom in elem.polygon.geoms:
-							polygonalRegions.append(geom.intersection(regionAroundEgo))
-					elif isinstance(elem.polygon, shapely.geometry.polygon.Polygon):
-						polygonalRegions.append(elem.polygon.intersection(regionAroundEgo))
-					else:
-						print("elem: ", elem)
-						raise NotImplementedError
-
-				if debug:
-					print("in MethodDist class, polygonalRegions: ", polygonalRegions)
-				multipolygon = shapely.geometry.multipolygon.MultiPolygon(polygonalRegions)
-				polygonReg = regions.regionFromShapelyObject(multipolygon)
-				polygonReg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
-
-			else: 
-				smt_var = self.arguments[0].encodeToSMT(smt_file_path, cached_variables, debug=debug)
-
+			x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+			y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+			smt_var = (x,y)
 			output = findVariableName(smt_file_path, cached_variables, 'methodDist', debug=debug)
-			heading_var = output
-			elems = optionsRegion.options
 
 			import scenic.domains.driving.roads as roads
-			if not optionsRegion.checkOptionsType(roads.NetworkElement):
-				elems = optionsRegion.options[0:len(optionsRegion)]
-
-			self.encodeHeading(cached_variables, elems, smt_file_path, smt_var, heading_var, debug=debug)
+			assert(optionsRegion.checkOptionsType(roads.NetworkElement))
+			heading_var = output
+			encodeHeading(cached_variables, optionsRegion.options, smt_file_path, smt_var, heading_var, debug=debug)
 
 		else:
 			raise NotImplementedError
 
 		return cacheVarName(cached_variables, self, output)
-
-	def refineCenterlinePts(self, centerlinePts):
-		import scenic.core.vectors as vectors
-		refinedCenterlinePts = []
-		prev_heading = None # (key, value) = (point, slope with the next point), last point's slope is None
-		for i in range(len(centerlinePts)-1):
-			x1, y1 = centerlinePts[i]
-			x2, y2 = centerlinePts[i+1]
-			heading = vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2))
-			if i == len(centerlinePts)-2:
-				if (x1,y1) not in refinedCenterlinePts:
-					refinedCenterlinePts.append((x1,y1))
-				refinedCenterlinePts.append((x2,y2))
-				break
-
-			if prev_heading is None:
-				prev_heading = heading
-				refinedCenterlinePts.append((x1,y1))
-			else:
-				if abs(heading-prev_heading) > 0.0872: # radians (about 5 degrees)
-					refinedCenterlinePts.append((x1,y1))
-					prev_heading = heading
-				else:
-					continue
-		assert(len(refinedCenterlinePts) >= 2)
-		return refinedCenterlinePts
-
-	# find line perpendicular to the centerline segment & pass through the centerline point
-	def encodeHeading(self, cached_variables, elems, smt_file_path, smt_var, heading_var, debug=False):
-		import shapely.geometry
-		import scenic.core.geometry as geometry
-		import scenic.core.vectors as vectors
-
-		if debug:
-			print("encodeHeading()")
-			print("elems: ", elems)
-
-		smt_encoding = None
-		regionAroundEgo = cached_variables['regionAroundEgo']
-		for elem in elems:
-			if debug:
-				print("len(elem.centerline.points): ", len(elem.centerline.points))
-				
-			if len(elem.centerline.points) > 2:
-				centerlinePts = [pt for pt in elem.centerline.points if regionAroundEgo.containsPoint(vectors.Vector(pt[0],pt[1]))]
-				
-				if debug:
-					print("original len(centerlinePts): ", len(centerlinePts))
-
-				if len(centerlinePts) == 1:
-					index = elem.centerline.points.index(centerlinePts[0])
-					if index < len(elem.centerline.points)-1:
-						centerlinePts.append(elem.centerline.points[index+1])
-					else:
-						centerlinePts.append(elem.centerline.points[index-1])
-				# assert(len(centerlinePts) >= 2)
-
-				if len(centerlinePts) > 0:
-					centerlinePts = self.refineCenterlinePts(centerlinePts)
-			else:
-				centerlinePts = elem.centerline.points
-	        
-			if debug:
-				print("refined len(centerlinePts): ",len(centerlinePts))
-
-			offset_distance = math.sqrt(math.pow(elem.leftEdge.points[0][0]-elem.rightEdge.points[0][0],2)+\
-								math.pow(elem.leftEdge.points[0][1]-elem.rightEdge.points[0][1],2))/2 + 5
-			for i in range(len(centerlinePts)-1):
-		        # find the previous two points
-				if i==0:
-					prevCenterPt = centerlinePts[0]
-					center_point = shapely.geometry.Point(prevCenterPt[0],prevCenterPt[1])
-					# prevLeftPt = self.findNearestEdgePoint(elem.leftEdge, center_point)
-					# prevRightPt = self.findNearestEdgePoint(elem.rightEdge, center_point)
-
-				x1,y1 = [prevCenterPt[0], prevCenterPt[1]]
-				x2,y2 = [centerlinePts[i+1][0], centerlinePts[i+1][1]]
-				
-				if x2 == x1:
-					slope = 100
-				else:
-					slope = float(y2-y1)/float(x2-x1)
-				
-				if abs(slope) > 20:
-					# find two points on the perpendicular line
-					left_x, right_x = x2 - offset_distance, x2 + offset_distance
-					left_y, right_y = y2, y2
-					if i == 0:
-						prevLeftPt = [x1 - offset_distance, y1]
-						prevRightPt = [x1 + offset_distance, y1]
-
-				elif abs(slope) < 0.2:
-					left_x, right_x = x2, x2
-					left_y, right_y = y2 - offset_distance, y2 + offset_distance
-					if i == 0:
-						prevLeftPt = [x1, y1 - offset_distance]
-						prevRightPt = [x1, y1 + offset_distance]
-
-				else:
-					perpendicular_slope = -1 / float(slope)
-					bias = y2 - perpendicular_slope * x2
-					left_x, right_x = x2 - offset_distance, x2 + offset_distance
-					left_y = perpendicular_slope * left_x + bias
-					right_y = perpendicular_slope * right_x + bias
-					if i == 0:
-						bias = y1 - perpendicular_slope * x1
-						left_x0, right_x0 = x1 - offset_distance, x1 + offset_distance
-						left_y0 = perpendicular_slope * left_x + bias
-						right_y0 = perpendicular_slope * right_x + bias
-						prevLeftPt = [left_x0, left_y0]
-						prevRightPt = [right_x0, right_y0]
-
-				left_pt = (left_x, left_y)
-				right_pt = (right_x, right_y)
-				line = shapely.geometry.LineString([left_pt, right_pt])
-
-				if debug:
-					if isinstance(elem.polygon, shapely.geometry.multipolygon.MultiPolygon):
-						for e in elem.polygon.geoms:
-							plt.plot(*e.exterior.xy)
-					else:
-						plt.plot(*elem.polygon.exterior.xy)
-					for pt in centerlinePts:
-						[x,y] = pt
-						plt.plot(x,y,'ko')
-					plt.plot(prevLeftPt[0], prevLeftPt[1], 'rx')
-					plt.plot(prevRightPt[0], prevRightPt[1], 'rx')
-					plt.plot(x1, y1,'ro')
-					plt.plot(left_x, left_y, 'bx')
-					plt.plot(right_x, right_y, 'bx')
-					plt.plot(x2, y2, 'go')
-					# plt.plot([left_x, right_x],[left_y, right_y], 'r-')
-					# plt.show()
-
-				intersect_leftPt = elem.leftEdge.lineString.intersection(line)
-				intersect_rightPt = elem.rightEdge.lineString.intersection(line)
-
-				if isinstance(intersect_leftPt, (shapely.geometry.MultiPoint, shapely.geometry.LineString)):
-					intersect_leftPt = self.findClosestPoint(intersect_leftPt, elem.leftEdge, \
-												shapely.geometry.Point(x2, y2), debug = debug)
-				# if isinstance(intersect_leftPt, shapely.geometry.LineString):
-				# 	intersect_leftPt = self.findClosestPoint(intersect_leftPt, shapely.geometry.Point(x2, y2))
-				if isinstance(intersect_rightPt, (shapely.geometry.MultiPoint, shapely.geometry.LineString)):
-					intersect_rightPt = self.findClosestPoint(intersect_rightPt, elem.rightEdge, \
-												shapely.geometry.Point(x2, y2), debug = debug)
-				# else isinstance(intersect_rightPt, shapely.geometry.LineString):
-				# 	intersect_rightPt = self.findClosestPoint(intersect_rightPt, shapely.geometry.Point(x2, y2))
-
-				# find the intersecting left/right points with left & right edge of the elem
-				if i+1 < len(centerlinePts)-1:
-					leftPt = (intersect_leftPt.x, intersect_leftPt.y)
-					rightPt = (intersect_rightPt.x, intersect_rightPt.y)
-				else:
-					leftPt = elem.leftEdge.lineString.coords[-1]
-					rightPt = elem.rightEdge.lineString.coords[-1]
-
-				# encode a region left of the vector [leftEdgePt, rightEdgePt]
-				leftOf_smt = self.encodeLeftRightOf(prevLeftPt, prevRightPt, smt_var, smt_file_path, side='left')
-
-				# encode a region right of the vector [leftPt, leftPt]
-				rightOf_smt = self.encodeLeftRightOf(leftPt, rightPt, smt_var, smt_file_path, side='right')
-
-				# cache previous points
-				prevLeftPt = leftPt
-				prevRightPt = rightPt
-				prevCenterPt = centerlinePts[i+1]
-
-				# encode heading smt with ite
-				joint_smt = smt_and(leftOf_smt, rightOf_smt)
-				heading = vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2))
-				if debug:
-					print("heading: ", heading)
-					# print("(x1,y1): ",(x1,y1))
-					# print("(x2,y2): ",(x2,y2))
-					# print("vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2)): ", vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2)))
-					# print("vectors.Vector(x2,y2).angleTo(vectors.Vector(x1,y1)): ", vectors.Vector(x2,y2).angleTo(vectors.Vector(x1,y1)))
-				
-				if smt_encoding is None:
-					smt_encoding = smt_ite(joint_smt, str(heading), '-1000')
-				else:
-					smt_encoding = smt_ite(joint_smt, str(heading), smt_encoding)
-
-				if debug:
-				    # print("i: ",i)
-				    # print("heading: ", heading)
-				    # print("prevCenterPt: ", prevCenterPt)
-				    # print("nextCenterPt: ", centerlinePts[i+1])
-					if i%2==0:
-						color1 = 'ro'
-						color2 = 'kx'
-					else:
-						color1 = 'gx'
-						color2 = 'kx'
-					# plt.plot([left_x, right_x], [left_y, right_y], 'o-')
-					plt.plot(intersect_leftPt.x, intersect_leftPt.y, color2)
-					plt.plot(intersect_rightPt.x, intersect_rightPt.y, color2)
-					plt.show()
-			if debug:
-				# plt.show()
-				print("smt_encoding is None ", smt_encoding is None)
-		writeSMTtoFile(smt_file_path, smt_assert("equal", heading_var , smt_encoding))
-		writeSMTtoFile(smt_file_path, smt_assert("not", smt_equal(heading_var, '-1000')))
-		return heading_var
-
-	def encodeLeftRightOf(self, leftPt, rightPt, smt_var, smt_file_path, side):
-	    """ D >= 0 : the point, (xp,yp), is on the left-hand side or the line 
-	        D = (x2-x1) * (yp-y1) - (xp-x1) * (y2-y1)
-	    """
-	    (xp, yp) = smt_var
-	    (x1,y1) = (str(leftPt[0]), str(leftPt[1]))
-	    (x2,y2) = (str(rightPt[0]), str(rightPt[1]))
-	    x2_x1 = smt_subtract(x2,x1)
-	    yp_y1 = smt_subtract(yp,y1)
-	    mult1 = smt_multiply(x2_x1, yp_y1)
-	    xp_x1 = smt_subtract(xp,x1)
-	    y2_y1 = smt_subtract(y2,y1)
-	    mult2 = smt_multiply(xp_x1, y2_y1)
-	    D = smt_subtract(mult1, mult2)
-	    if side == 'left':
-	        smt_encoding = smt_lessThanEq('0', D)
-	    else:
-	        smt_encoding = smt_lessThanEq(D ,'0')
-	        
-	#     writeSMTtoFile(smt_file_path, smt_encoding)
-	    return smt_encoding
-
-	def findNearestEdgePoint(self, edge, point):
-		min_dist = 10000
-		index, nearest_pt = None, None
-		for pt in edge.points:
-			x,y = pt
-			center_x, center_y = point.x, point.y
-			distance = math.sqrt(math.pow(center_x-x, 2)+math.pow(center_y-y,2))
-			if distance < min_dist:
-				min_dist = distance
-				nearest_pt = pt
-		return nearest_pt
-
-	def findClosestPoint(self, elems, edge, point, debug=False):
-		import shapely.geometry
-
-		if debug:
-			print("findClosestPoint() elems: ", elems)
-			print("elems.is_empty: ", elems.is_empty)
-
-		if elems.is_empty:
-			# pick the edge point nearest to the given point
-			nearest_pt = self.findNearestEdgePoint(edge, point)
-			return shapely.geometry.Point(nearest_pt)
-		elif isinstance(elems, shapely.geometry.MultiPoint):
-			multiPts = list(elems.geoms)
-		elif isinstance(elems, shapely.geometry.LineString):
-			multiPts = [shapely.geometry.Point(*pt) for pt in elems.coords]
-		else:
-			raise NotImplementedError
-
-		dist = []
-		for pt in multiPts:
-			dist.append(pt.distance(point))
-		return multiPts[dist.index(min(dist))]
 
 	def conditionforSMT(self, condition, conditioned_bool):
 		if isinstance(self.object, Samplable) and not isConditioned(self.object):
@@ -1266,8 +1274,6 @@ class AttributeDistribution(Distribution):
 			if isinstance(obj, Options):
 				if obj.checkOptionsType(roads.NetworkElement):
 					networkObjs = obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
-					if networkObjs is None:
-						return None
 
 					return networkObjs
 				else: 
@@ -1384,9 +1390,7 @@ class OperatorDistribution(Distribution):
 			print( "OperatorDistribution")
 			print( "operator: "+str(self.operator))
 			print( "type(operator): "+str(type(self.operator)))
-			# writeSMTtoFile(smt_file_path, "object: "+str(self.object))
 			print( "type(object): "+str(type(self.object._conditioned)))
-			# writeSMTtoFile(smt_file_path, "operands: "+str(self.operands))
 			for op in self.operands:
 				print( "type(operand): "+str(type(op)))
 
@@ -1544,41 +1548,15 @@ class OperatorDistribution(Distribution):
 							return cacheVarName(cached_variables, self, output)
 					return None
 
-				smt_var = None
-				if self.object in cached_variables.keys():
-					smt_var = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=True)
-				else:
-					x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
-					y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
-					smt_var = (x,y)
-					regionAroundEgo = cached_variables['regionAroundEgo_polygon']
-
-					import shapely.geometry
-					import scenic.core.regions as regions
-					polygonalRegions = []
-					for elem in optionsRegion.options:
-						intersection = elem.polygon.intersection(regionAroundEgo)
-						if isinstance(intersection, shapely.geometry.multipolygon.MultiPolygon):
-							for geom in intersection.geoms:
-								polygonalRegions.append(geom)
-						elif isinstance(intersection, shapely.geometry.polygon.Polygon):
-							polygonalRegions.append(intersection)
-						else:
-							print("elem: ", intersection)
-							raise NotImplementedError
-
-					multipolygon = shapely.geometry.multipolygon.MultiPolygon(polygonalRegions)
-					polygonReg = regions.regionFromShapelyObject(multipolygon)
-					polygonReg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
-
-				heading_var = output
-				elems = optionsRegion.options
+				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+				output = findVariableName(smt_file_path, cached_variables, 'opdist', debug=debug)
+				smt_var = (x,y)
 
 				import scenic.domains.driving.roads as roads
-				if not optionsRegion.checkOptionsType(roads.NetworkElement):
-					elems = optionsRegion.options[0:len(optionsRegion)]
-
-				self.encodeHeading(cached_variables, elems, smt_file_path, smt_var, heading_var, debug=debug)
+				assert(optionsRegion.checkOptionsType(roads.NetworkElement))
+				heading_var = output
+				encodeHeading(cached_variables, optionsRegion.options, smt_file_path, smt_var, heading_var, debug=debug)
 
 			else:
 				raise NotImplementedError
@@ -1599,267 +1577,6 @@ class OperatorDistribution(Distribution):
 
 		return cacheVarName(cached_variables, self, output)
 
-	def refineCenterlinePts(self, centerlinePts):
-		import scenic.core.vectors as vectors
-		refinedCenterlinePts = []
-		prev_heading = None # (key, value) = (point, slope with the next point), last point's slope is None
-		for i in range(len(centerlinePts)-1):
-			x1, y1 = centerlinePts[i]
-			x2, y2 = centerlinePts[i+1]
-			heading = vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2))
-			if i == len(centerlinePts)-2:
-				if (x1,y1) not in refinedCenterlinePts:
-					refinedCenterlinePts.append((x1,y1))
-				refinedCenterlinePts.append((x2,y2))
-				break
-
-			if prev_heading is None:
-				prev_heading = heading
-				refinedCenterlinePts.append((x1,y1))
-			else:
-				if abs(heading-prev_heading) > 0.0872: # radians (about 5 degrees)
-					refinedCenterlinePts.append((x1,y1))
-					prev_heading = heading
-				else:
-					continue
-		assert(len(refinedCenterlinePts) >= 2)
-		return refinedCenterlinePts
-
-
-	# find line perpendicular to the centerline segment & pass through the centerline point
-	def encodeHeading(self, cached_variables, elems, smt_file_path, smt_var, heading_var, debug=False):
-		import shapely.geometry
-		import scenic.core.geometry as geometry
-		import scenic.core.vectors as vectors
-
-		if debug:
-			print("encodeHeading()")
-			print("elems: ", elems)
-
-		smt_encoding = None
-		regionAroundEgo = cached_variables['regionAroundEgo']
-		for elem in elems:
-			if debug:
-				print("len(elem.centerline.points): ", len(elem.centerline.points))
-
-			if len(elem.centerline.points) > 2:
-				centerlinePts = [pt for pt in elem.centerline.points if regionAroundEgo.containsPoint(vectors.Vector(pt[0],pt[1]))]
-				
-				if debug:
-					print("original len(centerlinePts): ", len(centerlinePts))
-
-				if len(centerlinePts) == 1:
-					index = elem.centerline.points.index(centerlinePts[0])
-					if index < len(elem.centerline.points)-1:
-						centerlinePts.append(elem.centerline.points[index+1])
-					else:
-						centerlinePts.append(elem.centerline.points[index-1])
-				# assert(len(centerlinePts) >= 2)
-
-				if len(centerlinePts) > 0:
-					centerlinePts = self.refineCenterlinePts(centerlinePts)
-			else:
-				centerlinePts = elem.centerline.points
-	        
-			if debug:
-				print("refined len(centerlinePts): ",len(centerlinePts))
-
-			offset_distance = math.sqrt(math.pow(elem.leftEdge.points[0][0]-elem.rightEdge.points[0][0],2)+\
-								math.pow(elem.leftEdge.points[0][1]-elem.rightEdge.points[0][1],2))/2 + 5
-			for i in range(len(centerlinePts)-1):
-		        # find the previous two points
-				if i==0:
-					prevCenterPt = centerlinePts[0]
-					center_point = shapely.geometry.Point(prevCenterPt[0],prevCenterPt[1])
-					# prevLeftPt = self.findNearestEdgePoint(elem.leftEdge, center_point)
-					# prevRightPt = self.findNearestEdgePoint(elem.rightEdge, center_point)
-
-				x1,y1 = [prevCenterPt[0], prevCenterPt[1]]
-				x2,y2 = [centerlinePts[i+1][0], centerlinePts[i+1][1]]
-				
-				if x2 == x1:
-					slope = 100
-				else:
-					slope = float(y2-y1)/float(x2-x1)
-				
-				if abs(slope) > 20:
-					# find two points on the perpendicular line
-					left_x, right_x = x2 - offset_distance, x2 + offset_distance
-					left_y, right_y = y2, y2
-					if i == 0:
-						prevLeftPt = [x1 - offset_distance, y1]
-						prevRightPt = [x1 + offset_distance, y1]
-
-				elif abs(slope) < 0.2:
-					left_x, right_x = x2, x2
-					left_y, right_y = y2 - offset_distance, y2 + offset_distance
-					if i == 0:
-						prevLeftPt = [x1, y1 - offset_distance]
-						prevRightPt = [x1, y1 + offset_distance]
-
-				else:
-					perpendicular_slope = -1 / float(slope)
-					bias = y2 - perpendicular_slope * x2
-					left_x, right_x = x2 - offset_distance, x2 + offset_distance
-					left_y = perpendicular_slope * left_x + bias
-					right_y = perpendicular_slope * right_x + bias
-					if i == 0:
-						bias = y1 - perpendicular_slope * x1
-						left_x0, right_x0 = x1 - offset_distance, x1 + offset_distance
-						left_y0 = perpendicular_slope * left_x + bias
-						right_y0 = perpendicular_slope * right_x + bias
-						prevLeftPt = [left_x0, left_y0]
-						prevRightPt = [right_x0, right_y0]
-
-				left_pt = (left_x, left_y)
-				right_pt = (right_x, right_y)
-				line = shapely.geometry.LineString([left_pt, right_pt])
-
-				if debug:
-					if isinstance(elem.polygon, shapely.geometry.multipolygon.MultiPolygon):
-						for e in elem.polygon.geoms:
-							plt.plot(*e.exterior.xy)
-					else:
-						plt.plot(*elem.polygon.exterior.xy)
-					for pt in centerlinePts:
-						[x,y] = pt
-						plt.plot(x,y,'ko')
-					plt.plot(prevLeftPt[0], prevLeftPt[1], 'rx')
-					plt.plot(prevRightPt[0], prevRightPt[1], 'rx')
-					plt.plot(x1, y1,'ro')
-					plt.plot(left_x, left_y, 'bx')
-					plt.plot(right_x, right_y, 'bx')
-					plt.plot(x2, y2, 'go')
-					# plt.plot([left_x, right_x],[left_y, right_y], 'r-')
-					# plt.show()
-
-				intersect_leftPt = elem.leftEdge.lineString.intersection(line)
-				intersect_rightPt = elem.rightEdge.lineString.intersection(line)
-
-				if isinstance(intersect_leftPt, (shapely.geometry.MultiPoint, shapely.geometry.LineString)):
-					intersect_leftPt = self.findClosestPoint(intersect_leftPt, elem.leftEdge, \
-												shapely.geometry.Point(x2, y2), debug = debug)
-				# if isinstance(intersect_leftPt, shapely.geometry.LineString):
-				# 	intersect_leftPt = self.findClosestPoint(intersect_leftPt, shapely.geometry.Point(x2, y2))
-				if isinstance(intersect_rightPt, (shapely.geometry.MultiPoint, shapely.geometry.LineString)):
-					intersect_rightPt = self.findClosestPoint(intersect_rightPt, elem.rightEdge, \
-												shapely.geometry.Point(x2, y2), debug = debug)
-				# else isinstance(intersect_rightPt, shapely.geometry.LineString):
-				# 	intersect_rightPt = self.findClosestPoint(intersect_rightPt, shapely.geometry.Point(x2, y2))
-
-				# find the intersecting left/right points with left & right edge of the elem
-				if i+1 < len(centerlinePts)-1:
-					leftPt = (intersect_leftPt.x, intersect_leftPt.y)
-					rightPt = (intersect_rightPt.x, intersect_rightPt.y)
-				else:
-					leftPt = elem.leftEdge.lineString.coords[-1]
-					rightPt = elem.rightEdge.lineString.coords[-1]
-
-				# encode a region left of the vector [leftEdgePt, rightEdgePt]
-				leftOf_smt = self.encodeLeftRightOf(prevLeftPt, prevRightPt, smt_var, smt_file_path, side='left')
-
-				# encode a region right of the vector [leftPt, leftPt]
-				rightOf_smt = self.encodeLeftRightOf(leftPt, rightPt, smt_var, smt_file_path, side='right')
-
-				# cache previous points
-				prevLeftPt = leftPt
-				prevRightPt = rightPt
-				prevCenterPt = centerlinePts[i+1]
-
-				# encode heading smt with ite
-				joint_smt = smt_and(leftOf_smt, rightOf_smt)
-				heading = vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2))
-				if debug:
-					print("heading: ", heading)
-					# print("(x1,y1): ",(x1,y1))
-					# print("(x2,y2): ",(x2,y2))
-					# print("vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2)): ", vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2)))
-					# print("vectors.Vector(x2,y2).angleTo(vectors.Vector(x1,y1)): ", vectors.Vector(x2,y2).angleTo(vectors.Vector(x1,y1)))
-				
-				if smt_encoding is None:
-					smt_encoding = smt_ite(joint_smt, str(heading), '-1000')
-				else:
-					smt_encoding = smt_ite(joint_smt, str(heading), smt_encoding)
-
-				if debug:
-				    # print("i: ",i)
-				    # print("heading: ", heading)
-				    # print("prevCenterPt: ", prevCenterPt)
-				    # print("nextCenterPt: ", centerlinePts[i+1])
-					if i%2==0:
-						color1 = 'ro'
-						color2 = 'kx'
-					else:
-						color1 = 'gx'
-						color2 = 'kx'
-					# plt.plot([left_x, right_x], [left_y, right_y], 'o-')
-					plt.plot(intersect_leftPt.x, intersect_leftPt.y, color2)
-					plt.plot(intersect_rightPt.x, intersect_rightPt.y, color2)
-					plt.show()
-			if debug:
-				# plt.show()
-				print("smt_encoding is None ", smt_encoding is None)
-		writeSMTtoFile(smt_file_path, smt_assert("equal", heading_var , smt_encoding))
-		writeSMTtoFile(smt_file_path, smt_assert("not", smt_equal(heading_var, '-1000')))
-		return heading_var
-
-	def encodeLeftRightOf(self, leftPt, rightPt, smt_var, smt_file_path, side):
-	    """ D >= 0 : the point, (xp,yp), is on the left-hand side or the line 
-	        D = (x2-x1) * (yp-y1) - (xp-x1) * (y2-y1)
-	    """
-	    (xp, yp) = smt_var
-	    (x1,y1) = (str(leftPt[0]), str(leftPt[1]))
-	    (x2,y2) = (str(rightPt[0]), str(rightPt[1]))
-	    x2_x1 = smt_subtract(x2,x1)
-	    yp_y1 = smt_subtract(yp,y1)
-	    mult1 = smt_multiply(x2_x1, yp_y1)
-	    xp_x1 = smt_subtract(xp,x1)
-	    y2_y1 = smt_subtract(y2,y1)
-	    mult2 = smt_multiply(xp_x1, y2_y1)
-	    D = smt_subtract(mult1, mult2)
-	    if side == 'left':
-	        smt_encoding = smt_lessThanEq('0', D)
-	    else:
-	        smt_encoding = smt_lessThanEq(D ,'0')
-	        
-	#     writeSMTtoFile(smt_file_path, smt_encoding)
-	    return smt_encoding
-
-	def findNearestEdgePoint(self, edge, point):
-		min_dist = 10000
-		index, nearest_pt = None, None
-		for pt in edge.points:
-			x,y = pt
-			center_x, center_y = point.x, point.y
-			distance = math.sqrt(math.pow(center_x-x, 2)+math.pow(center_y-y,2))
-			if distance < min_dist:
-				min_dist = distance
-				nearest_pt = pt
-		return nearest_pt
-
-	def findClosestPoint(self, elems, edge, point, debug=False):
-		import shapely.geometry
-
-		if debug:
-			print("findClosestPoint() elems: ", elems)
-			print("elems.is_empty: ", elems.is_empty)
-
-		if elems.is_empty:
-			# pick the edge point nearest to the given point
-			nearest_pt = self.findNearestEdgePoint(edge, point)
-			return shapely.geometry.Point(nearest_pt)
-		elif isinstance(elems, shapely.geometry.MultiPoint):
-			multiPts = list(elems.geoms)
-		elif isinstance(elems, shapely.geometry.LineString):
-			multiPts = [shapely.geometry.Point(*pt) for pt in elems.coords]
-		else:
-			raise NotImplementedError
-
-		dist = []
-		for pt in multiPts:
-			dist.append(pt.distance(point))
-		return multiPts[dist.index(min(dist))]
-	
 
 	@staticmethod
 	def inferType(obj, operator):

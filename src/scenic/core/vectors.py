@@ -63,7 +63,7 @@ class VectorOperatorDistribution(VectorDistribution):
 				op.conditionforSMT(condition, conditioned_bool)
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
 		# if not isinstance(obj, Samplable):
 		# 	obj = self
 
@@ -72,6 +72,9 @@ class VectorOperatorDistribution(VectorDistribution):
 			print( "self.object: "+str(self.object))
 			print( "self.operator: "+str(self.operator))
 			print( "self.operands: "+str(self.operands))
+
+		if not encode:
+			return self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 
 		if self in cached_variables.keys():
 			if debug:

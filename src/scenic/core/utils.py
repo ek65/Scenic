@@ -1,9 +1,8 @@
 """Assorted utility functions."""
 
 import math
-
 import wrapt
-
+import matplotlib.pyplot as plt
 sqrt2 = math.sqrt(2)
 
 def cached(oldMethod):

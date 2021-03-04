@@ -5,6 +5,6 @@ model scenic.simulators.carla.model #located in scenic/simulators/carla/model.sc
 ego = Car on lane, facing Range(-10, 10) deg relative to roadDirection
 car = Car ahead of ego by Range(5, 10),
 		facing Range(-10,10) deg relative to roadDirection
-truck = Truck at (car offset by Range(-3,3) @ Range(3,5))
-
+truck = Truck at (ego offset by Range(-3,3) @ Range(3,5))
 require (angle from car to truck) < 0
+require (distance from intersectionRegion) > 20

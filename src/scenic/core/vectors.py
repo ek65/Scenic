@@ -85,6 +85,8 @@ class VectorOperatorDistribution(VectorDistribution):
 		if obj is None:
 			return None
 
+		if debug:
+			print("VectorOperatorDistribution obj: ", obj)
 		obj = Vector(obj[0], obj[1])
 
 		### Make sure object and operands are smt encoded

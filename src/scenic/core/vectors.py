@@ -14,7 +14,7 @@ import wrapt
 from scenic.core.distributions import (Samplable, Distribution, MethodDistribution,
     needsSampling, makeOperatorHandler, distributionMethod, distributionFunction,
 	RejectionException, smt_add, smt_subtract, smt_multiply, smt_divide, smt_and, 
-	smt_equal, smt_mod, smt_assert, findVariableName, isConditioned,
+	smt_equal, smt_assert, findVariableName, isConditioned,
 	checkAndEncodeSMT, writeSMTtoFile, cacheVarName, smt_lessThan, smt_lessThanEq, smt_ite, normalizeAngle_SMT, vector_operation_smt)
 from scenic.core.lazy_eval import valueInContext, needsLazyEvaluation, makeDelayedFunctionCall
 import scenic.core.utils as utils
@@ -475,11 +475,11 @@ class Vector(Samplable, collections.abc.Sequence):
 
 	def angleToEncodeSMT(self, smt_file_path, cached_variables, other, debug=False):
 		if debug:
-			print( "angleTo")
+			print( "angleTo")          
 		(other_x, other_y) = checkAndEncodeSMT(smt_file_path, cached_variables, other, debug = debug)
 		(vec_x, vec_y) = checkAndEncodeSMT(smt_file_path, cached_variables, self, debug = debug)
-		dx = smt_assert("subtract", other_x, vec_x)
-		dy = smt_assert("subtract", other_y, vec_y)
+		dx = smt_subtract(other_x, vec_x)
+		dy = smt_subtract(other_y, vec_y)
 		smt_atan = "(arctan "+smt_divide(dy, dx)+")"
 		subtraction = smt_subtract(smt_atan, smt_divide('3.1416','2'))
 		theta = normalizeAngle_SMT(smt_file_path, cached_variables, subtraction, debug=debug)

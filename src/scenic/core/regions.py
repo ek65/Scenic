@@ -11,7 +11,7 @@ import shapely.prepared
 
 from scenic.core.distributions import (Samplable, RejectionException, needsSampling,
                                        distributionMethod, smt_add, smt_subtract, smt_multiply, 
-                                       smt_divide, smt_and, smt_equal, smt_mod, smt_assert, findVariableName,
+                                       smt_divide, smt_and, smt_equal, smt_assert, findVariableName,
                                        checkAndEncodeSMT, writeSMTtoFile, cacheVarName, smt_lessThan, smt_lessThanEq,
                                        smt_ite, normalizeAngle_SMT, smt_or, vector_operation_smt, Options, isConditioned,
                                        Options, UniformDistribution, Constant)

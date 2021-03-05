@@ -34,7 +34,7 @@ def smt_multiply(var1, var2):
 def smt_divide(var1, var2):
 	assert(isinstance(var1, str))
 	assert(isinstance(var2, str))
-	return "(div "+var1+" "+var2+")"
+	return "(/ "+var1+" "+var2+")"
 
 def smt_and(var1, var2):
 	assert(isinstance(var1, str))
@@ -51,10 +51,10 @@ def smt_equal(var1, var2):
 	assert(isinstance(var2, str))
 	return "(= "+var1+" "+var2+")"
 
-def smt_mod(var1, var2):
-	assert(isinstance(var1, str))
-	assert(isinstance(var2, str))
-	return "(mod "+var1+" "+var2+")"
+# def smt_mod(var1, var2):
+# 	assert(isinstance(var1, str))
+# 	assert(isinstance(var2, str))
+# 	return "(mod "+var1+" "+var2+")"
 
 def smt_lessThan(var1, var2):
 	assert(isinstance(var1, str))
@@ -91,8 +91,8 @@ def smt_assert(operation_type, var1, var2=None):
 		op_encoding = smt_equal(var1, var2)
 	elif operation_type == "and":
 		op_encoding = smt_and(var1, var2)
-	elif operation_type == "mod":
-		op_encoding = smt_mod(var1, var2)
+	# elif operation_type == "mod":
+	# 	op_encoding = smt_mod(var1, var2)
 	elif operation_type == "<=":
 		op_encoding = smt_lessThanEq(var1, var2)
 	elif operation_type == "<":
@@ -143,23 +143,23 @@ def vector_operation_smt(vector1, operation, vector2):
 
 def normalizeAngle_SMT(smt_file_path, cached_variables, original_angle, debug=False):
 	angle = findVariableName(smt_file_path, cached_variables, 'angle', debug=debug)
-	ite1 = smt_assert("equal", angle , smt_ite(smt_lessThan("0", original_angle), \
-		smt_mod(original_angle, "6.2832"), original_angle))
-	ite2 = smt_assert("equal", angle , smt_ite(smt_lessThan(original_angle, "0"), \
-		smt_mod(original_angle, "-6.2832"), original_angle))
+	# ite1 = smt_assert("equal", angle , smt_ite(smt_lessThan("0", original_angle), \
+	# 	smt_mod(original_angle, "6.2832"), original_angle))
+	# ite2 = smt_assert("equal", angle , smt_ite(smt_lessThan(original_angle, "0"), \
+	# 	smt_mod(original_angle, "-6.2832"), original_angle))
 
-	writeSMTtoFile(smt_file_path, ite1)
-	writeSMTtoFile(smt_file_path, ite2)
+	# writeSMTtoFile(smt_file_path, ite1)
+	# writeSMTtoFile(smt_file_path, ite2)
 
-	theta = findVariableName(smt_file_path, cached_variables, 'theta', debug=debug)
-	theta_encoding = smt_assert("equal", theta, angle)
-	angleTo_encoding1 = smt_assert("equal", theta, smt_ite(smt_lessThanEq("3.1416",angle), smt_subtract(angle,"6.2832"), angle))
-	angleTo_encoding2 = smt_assert("equal", theta, smt_ite(smt_lessThanEq(angle, "-3.1416"), smt_add(angle,"6.2832"), angle))
+	# theta = findVariableName(smt_file_path, cached_variables, 'theta', debug=debug)
+	# theta_encoding = smt_assert("equal", theta, angle)          
+	angleTo_encoding1 = smt_assert("equal", angle, smt_ite(smt_lessThanEq("3.1416",angle), smt_subtract(angle,"6.2832"), angle))
+	angleTo_encoding2 = smt_assert("equal", angle, smt_ite(smt_lessThanEq(angle, "-3.1416"), smt_add(angle,"6.2832"), angle))
 
-	writeSMTtoFile(smt_file_path, theta_encoding)
+	# writeSMTtoFile(smt_file_path, theta_encoding)
 	writeSMTtoFile(smt_file_path, angleTo_encoding1)
 	writeSMTtoFile(smt_file_path, angleTo_encoding2)
-	return theta
+	return angle
 
 def findVariableName(smt_file_path, cached_variables, class_name, class_type=None, debug=False):
 	""" for smt encoding, to avoid duplicate naming, add a number at then end for differentiation 
@@ -184,32 +184,32 @@ def checkAndEncodeSMT(smt_file_path, cached_variables, obj, debug=False):
 	# checks the type of the obj and encode to smt accordingly
 	# this step can be done in each class, but having this function
 	# saves the trouble of executing the same step, repeatedly
-	print("checkAndEncodeSMT")
+	# print("checkAndEncodeSMT")
 	if obj in cached_variables.keys():
-		print("1st case")
+		# print("1st case")
 		return cached_variables[obj]
 	elif isinstance(obj, int) or isinstance(obj, float):
 		return str(obj)
 	elif isinstance(obj, str):
-		print("2nd case")
+		# print("2nd case")
 		return obj
 	elif isinstance(obj, tuple):
-		print("3rd case")
+		# print("3rd case")
 		elements = []
 		for elem in obj:
 			elements.append(checkAndEncodeSMT(smt_file_path, cached_variables, elem,debug))
 		return tuple(elements)
 	elif isinstance(obj._conditioned, Constant):
-		print("4th case")
+		# print("4th case")
 		return str(obj._conditioned.value)
 	elif isinstance(obj._conditioned, Samplable):
-		print("5th case")
+		# print("5th case")
 		return obj._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 	elif isinstance(obj._conditioned, int) or isinstance(obj._conditioned, float):
-		print("6th case")
+		# print("6th case")
 		return str(obj._conditioned)
 	elif isinstance(obj._conditioned, str):
-		print("7th case")
+		# print("7th case")
 		# this covers case in regions.py, PointInRegionDist's encodeToSMT where
 		# a Vector is instantiated with string variable names
 		return obj._conditioned
@@ -1564,13 +1564,13 @@ class OperatorDistribution(Distribution):
 				division = smt_divide(operand_smt, obj_var)
 				smt_encoding = smt_assert("equal", output, division)
 
-			elif self.operator == '__mod__':
-				modular = smt_mod(obj_var, operand_smt)
-				smt_encoding = smt_assert("equal", output, modular)
+			# elif self.operator == '__mod__':
+			# 	modular = smt_mod(obj_var, operand_smt)
+			# 	smt_encoding = smt_assert("equal", output, modular)
 
-			elif self.operator == '__rmod__':
-				modular = smt_mod(operand_smt, obj_var)
-				smt_encoding = smt_assert("equal", output, modular)
+			# elif self.operator == '__rmod__':
+			# 	modular = smt_mod(operand_smt, obj_var)
+			# 	smt_encoding = smt_assert("equal", output, modular)
 
 			else:# TODO: floordiv, rfloordiv, divmod, rdivmod, pow, rpow
 				raise NotImplementedError
@@ -1669,7 +1669,7 @@ class OperatorDistribution(Distribution):
 					vector = self.operands[0]._conditioned
 					for region in optionsRegion.options:
 						if region.containsPoint(vector):
-							heading = str(region.nominalDirectionsAt(vector))
+							heading = str(region.nominalDirectionsAt(vector)[0])
 							writeSMTtoFile(smt_file_path, smt_assert("equal", heading, output))
 							return cacheVarName(cached_variables, self, output)
 					return None
@@ -1694,6 +1694,8 @@ class OperatorDistribution(Distribution):
 
 		elif self.operator == 'angleTo':
 			import scenic.core.vectors as vectors
+			if debug:
+				print("OperatorDist operator angleTo case")
 			self_vector_smt = self.object.encodeToSMT(smt_file_path, cached_variables, debug)
 			other_vector_smt= self.operands[0].encodeToSMT(smt_file_path, cached_variables, debug)
 			self_vector = vectors.Vector(self_vector_smt[0], self_vector_smt[1])

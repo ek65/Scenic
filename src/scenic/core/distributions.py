@@ -184,24 +184,35 @@ def checkAndEncodeSMT(smt_file_path, cached_variables, obj, debug=False):
 	# checks the type of the obj and encode to smt accordingly
 	# this step can be done in each class, but having this function
 	# saves the trouble of executing the same step, repeatedly
+	print("checkAndEncodeSMT")
 	if obj in cached_variables.keys():
+		print("1st case")
 		return cached_variables[obj]
 	elif isinstance(obj, int) or isinstance(obj, float):
 		return str(obj)
 	elif isinstance(obj, str):
+		print("2nd case")
 		return obj
 	elif isinstance(obj, tuple):
-		return obj
+		print("3rd case")
+		elements = []
+		for elem in obj:
+			elements.append(checkAndEncodeSMT(smt_file_path, cached_variables, elem,debug))
+		return tuple(elements)
 	elif isinstance(obj._conditioned, Constant):
-		return str(obj.value)
+		print("4th case")
+		return str(obj._conditioned.value)
 	elif isinstance(obj._conditioned, Samplable):
+		print("5th case")
 		return obj._conditioned.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 	elif isinstance(obj._conditioned, int) or isinstance(obj._conditioned, float):
-		return str(obj)
+		print("6th case")
+		return str(obj._conditioned)
 	elif isinstance(obj._conditioned, str):
+		print("7th case")
 		# this covers case in regions.py, PointInRegionDist's encodeToSMT where
 		# a Vector is instantiated with string variable names
-		return obj
+		return obj._conditioned
 	else:
 		raise NotImplementedError
 	return None
@@ -252,9 +263,9 @@ def refineCenterlinePts(centerlinePts, elem, intersection):
 
 		# find the two points closest to the intersection 
 		distance = [shapely.geometry.point.Point(pt[0],pt[1]).distance(intersection) for pt in elem.centerline.points]
-		centerlinePts = [elem.centerline.points[i] for i in range(len(distance)) if distance[i] < 5]
+		centerlinePts = [elem.centerline.points[i] for i in range(len(distance))]
 		if len(centerlinePts) == 0:
-			return None
+			centerlinePts = [centerlinePts[centerlinePts.index(min(distance))]]
 
 	if len(centerlinePts) == 1:
 		if centerlinePts[0] == elem.centerline.points[0]:
@@ -280,7 +291,7 @@ def refineCenterlinePts(centerlinePts, elem, intersection):
 			refinedCenterlinePts.append((x1,y1))
 		else:
 			angle_difference = abs(heading-prev_heading)
-			if 0.0872 < angle_difference and angle_difference < math.pi/2: # radians (about 5 degrees)
+			if 0.01745 < angle_difference and angle_difference < math.pi/2: # radians (about 5 degrees)
 				refinedCenterlinePts.append((x1,y1))
 				prev_heading = heading
 			else:
@@ -299,6 +310,16 @@ def encodeHeading(cached_variables, elems, smt_file_path, smt_var, heading_var, 
 	smt_encoding = None
 	regionAroundEgo = cached_variables['regionAroundEgo']
 
+	# 0 <= s <= 1
+	s = findVariableName(smt_file_path, cached_variables, 's', debug=debug)
+	t = findVariableName(smt_file_path, cached_variables, 't', debug=debug)
+	s_constraint = smt_assert("and", smt_lessThanEq("0",s), smt_lessThanEq(s,"1"))
+	t_constraint = smt_assert("and", smt_lessThanEq("0",t), smt_lessThanEq(t,"1"))
+	s_and_t_constraint = smt_assert("<=", smt_add(s,t), "1")
+	writeSMTtoFile(smt_file_path, s_constraint)
+	writeSMTtoFile(smt_file_path, t_constraint)
+	writeSMTtoFile(smt_file_path, s_and_t_constraint)
+
 	if debug:
 		print("encodeHeading()")
 		print("elems: ", elems)
@@ -313,17 +334,19 @@ def encodeHeading(cached_variables, elems, smt_file_path, smt_var, heading_var, 
 			print("len(elem.centerline.points): ", len(elem.centerline.points))
 			print("len(centerlinePts): ", len(centerlinePts))
 
-		if len(centerlinePts) == 1:
-			index = elem.centerline.points.index(centerlinePts[0])
-			if index < len(elem.centerline.points)-1:
-				centerlinePts.append(elem.centerline.points[index+1])
-			else:
-				centerlinePts.append(elem.centerline.points[index-1])
-		# assert(len(centerlinePts) >= 2)
+		# if len(centerlinePts) == 1:
+		# 	index = elem.centerline.points.index(centerlinePts[0])
+		# 	if index < len(elem.centerline.points)-1:
+		# 		centerlinePts.append(elem.centerline.points[index+1])
+		# 	else:
+		# 		centerlinePts.append(elem.centerline.points[index-1])
+		# # assert(len(centerlinePts) >= 2)
 
 		intersection = elem.polygon.intersection(cached_variables['regionAroundEgo_polygon'])
 		centerlinePts = refineCenterlinePts(centerlinePts, elem, intersection)
 		if centerlinePts is None:
+			if debug:
+				print("centerlinePts is None")
 			continue
 
 		if debug:
@@ -427,50 +450,137 @@ def encodeHeading(cached_variables, elems, smt_file_path, smt_var, heading_var, 
 				plt.plot(x2, y2, 'go')
 				plt.plot(intersect_leftPt[0], intersect_leftPt[1], 'kx')
 				plt.plot(intersect_rightPt[0], intersect_rightPt[1], 'kx')
+				x_range = [centerlinePts[0][0], centerlinePts[-1][0]]
+				y_range = [centerlinePts[0][1], centerlinePts[-1][1]]
+				x_left, x_right = min(x_range), max(x_range)
+				y_bottom, y_top = min(y_range), max(y_range)
+				plt.xlim(left=x_left-20, right=x_right+20)
+				plt.ylim(bottom=y_bottom-20, top = y_top+20)
 				plt.show()
 
 			# find the intersecting left/right points with left & right edge of the elem
-			if i+1 < len(centerlinePts)-1:
-				leftPt = (intersect_leftPt[0], intersect_leftPt[1])
-				rightPt = (intersect_rightPt[0], intersect_rightPt[1])
+			# if i+1 < len(centerlinePts)-1:
+			# 	leftPt = (intersect_leftPt[0], intersect_leftPt[1])
+			# 	rightPt = (intersect_rightPt[0], intersect_rightPt[1])
+			# else:
+			# 	leftPt = elem.leftEdge.lineString.coords[-1]
+			# 	rightPt = elem.rightEdge.lineString.coords[-1]
+			leftPt = (intersect_leftPt[0], intersect_leftPt[1])
+			rightPt = (intersect_rightPt[0], intersect_rightPt[1])
+
+			# Create a Polygon
+			square_points = [prevLeftPt, leftPt, rightPt, prevRightPt]
+			polygon = shapely.geometry.polygon.Polygon(square_points)
+			triangles = geometry.triangulatePolygon(polygon)
+			if debug:
+				plt.plot(*polygon.exterior.xy)
+				print("len(triangles): ", len(triangles))
+
+			# # encode a region left of the vector [prevLeftPt, prevRightPt]
+			# leftOf_smt = encodeLeftRightOf(prevLeftPt, prevRightPt, smt_var, smt_file_path, side='left')
+
+			# # encode a region right of the vector [leftPt, rightPt]
+			# rightOf_smt = encodeLeftRightOf(leftPt, rightPt, smt_var, smt_file_path, side='right')
+
+			# # encode a region right of [prevLeftPt, leftPt]
+			# rightOf_smt2 = encodeLeftRightOf(prevLeftPt, leftPt, smt_var, smt_file_path, side='right')
+
+			# # encode a region left of [prevRightPt, rightPt]
+			# leftOf_smt2 = encodeLeftRightOf(prevRightPt, rightPt, smt_var, smt_file_path, side='left')
+
+			# encode heading smt with ite
+			# joint_smt = smt_and(smt_and(leftOf_smt, rightOf_smt), smt_and(leftOf_smt2, rightOf_smt2))
+			joint_smt = encodePolygon(smt_file_path, cached_variables, triangles, smt_var, s,t, debug=debug)
+			heading = str(vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2)))
+
+			if debug:
+				print("heading: ", heading)
+
+			if smt_encoding is None:
+				smt_encoding = smt_ite(joint_smt, heading, '-1000')
 			else:
-				leftPt = elem.leftEdge.lineString.coords[-1]
-				rightPt = elem.rightEdge.lineString.coords[-1]
+				smt_encoding = smt_ite(joint_smt, heading, smt_encoding)
 
-			# encode a region left of the vector [prevLeftPt, prevRightPt]
-			leftOf_smt = encodeLeftRightOf(prevLeftPt, prevRightPt, smt_var, smt_file_path, side='left')
-
-			# encode a region right of the vector [leftPt, rightPt]
-			rightOf_smt = encodeLeftRightOf(leftPt, rightPt, smt_var, smt_file_path, side='right')
-
-			# encode a region right of [prevLeftPt, leftPt]
-			rightOf_smt2 = encodeLeftRightOf(prevLeftPt, leftPt, smt_var, smt_file_path, side='right')
-
-			# encode a region left of [prevRightPt, rightPt]
-			leftOf_smt2 = encodeLeftRightOf(prevRightPt, rightPt, smt_var, smt_file_path, side='left')
+			assert(smt_encoding is not None)
 
 			# cache previous points
 			prevLeftPt = leftPt
 			prevRightPt = rightPt
 			prevCenterPt = centerlinePts[i+1]
 
-			# encode heading smt with ite
-			joint_smt = smt_and(smt_and(leftOf_smt, rightOf_smt), smt_and(leftOf_smt2, rightOf_smt2))
-			heading = vectors.Vector(x1,y1).angleTo(vectors.Vector(x2,y2))
-
-			if debug:
-				print("heading: ", heading)
-			if smt_encoding is None:
-				smt_encoding = smt_ite(joint_smt, str(heading), '-1000')
-			else:
-				smt_encoding = smt_ite(joint_smt, str(heading), smt_encoding)
-
-			assert(smt_encoding is not None)
-
 	if smt_encoding is not None:
 		writeSMTtoFile(smt_file_path, smt_assert("equal", heading_var , smt_encoding))
 		writeSMTtoFile(smt_file_path, smt_assert("not", smt_equal(heading_var, '-1000')))
 	return heading_var
+
+def encodePolygon(smt_file_path, cached_variables, triangles, smt_var, s, t, debug=False):
+	""" Assumption: the polygons given from polygon region will always be in triangles """
+	if debug:
+		print( "encodePolygon()")
+
+	assert(isinstance(smt_var, tuple) and len(smt_var)==2)
+	(x, y) = smt_var
+
+	triangle_list = triangles if isinstance(triangles, list) else list(triangles)
+	cumulative_smt_encoding = None
+
+	# # 0 <= s <= 1
+	# s = findVariableName(smt_file_path, cached_variables, 's', debug=debug)
+	# t = findVariableName(smt_file_path, cached_variables, 't', debug=debug)
+	# s_constraint = smt_assert("and", smt_lessThanEq("0",s), smt_lessThanEq(s,"1"))
+	# t_constraint = smt_assert("and", smt_lessThanEq("0",t), smt_lessThanEq(t,"1"))
+	# s_and_t_constraint = smt_assert("<=", smt_add(s,t), "1")
+	# writeSMTtoFile(smt_file_path, s_constraint)
+	# writeSMTtoFile(smt_file_path, t_constraint)
+	# writeSMTtoFile(smt_file_path, s_and_t_constraint)
+
+	for triangle in triangle_list:
+
+		""" barycentric coordinate approach
+		A point p is located within a triangle region (defined by p0, p1, p2) if there exists s and t, 
+		where 0 <= s <= 1 and 0 <= t <= 1 and s + t <= 1, 
+		p = p0 + (p1 - p0) * s + (p2 - p0) * t
+		s, t, 1 - s - t are called the barycentric coordinates of the point p 
+		"""
+
+		coords = list(triangle.exterior.coords)
+
+		p0 = coords[0]
+		p1 = coords[1]
+		p2 = coords[2]
+
+		p1_p0 = vector_operation_smt(p1, "subtract", p0)
+		multiply1 = vector_operation_smt(p1_p0, "multiply", s)
+		p2_p0 = vector_operation_smt(p2, "subtract", p0)
+		multiply2 = vector_operation_smt(p2_p0, "multiply", t)
+		summation = vector_operation_smt(multiply1, "add", multiply2)
+		p = vector_operation_smt(p0, "add" ,summation)
+		
+		equality_x = smt_equal(x, p[0])
+		equality_y = smt_equal(y, p[1])
+		smt_encoding = smt_and(equality_x, equality_y)
+
+		if cumulative_smt_encoding == None:
+			cumulative_smt_encoding = smt_encoding
+		else:
+			cumulative_smt_encoding = smt_or(cumulative_smt_encoding, smt_encoding)
+
+		if debug:
+			plt.plot(*triangle.exterior.xy, color='g')
+
+		# if debug:
+		# 	print( "p0: "+str(p0))
+		# 	print( "p1: "+str(p1))
+		# 	print( "p2: "+str(p2))
+
+	if debug:
+		# ego_polygon = cached_variables['regionAroundEgo_polygon']
+		# plt.plot(*ego_polygon.exterior.xy, color = 'r')
+		# center = regionAroundEgo.center
+		# plt.plot(center.x, center.y, color='ro')
+		plt.show()
+
+	return cumulative_smt_encoding
 
 def encodeLeftRightOf(leftPt, rightPt, smt_var, smt_file_path, side):
     """ D >= 0 : the point, (xp,yp), is on the left-hand side or the line 
@@ -858,17 +968,17 @@ class FunctionDistribution(Distribution):
 		self.kwargs = kwargs
 		self.support = support
 
-	def conditionforSMT(self, condition, conditioned_bool):
-		for arg in self.arguments:
-			if isinstance(arg, Samplable) and not isConditioned(arg):
-				arg.conditionforSMT(condition, conditioned_bool)
-		for kwarg in self.kwargs:
-			if isinstance(kwarg, Samplable) and not isConditioned(kwarg):
-				kwarg.conditionforSMT(condition, conditioned_bool)
-		for support in self.support:
-			if isinstance(support, Samplable) and not isConditioned(support):
-				support.conditionforSMT(condition, conditioned_bool)
-		return None
+	# def conditionforSMT(self, condition, conditioned_bool):
+	# 	for arg in self.arguments:
+	# 		if isinstance(arg, Samplable) and not isConditioned(arg):
+	# 			arg.conditionforSMT(condition, conditioned_bool)
+	# 	for kwarg in self.kwargs:
+	# 		if isinstance(kwarg, Samplable) and not isConditioned(kwarg):
+	# 			kwarg.conditionforSMT(condition, conditioned_bool)
+	# 	for support in self.support:
+	# 		if isinstance(support, Samplable) and not isConditioned(support):
+	# 			support.conditionforSMT(condition, conditioned_bool)
+	# 	return None
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
@@ -1150,8 +1260,13 @@ class MethodDistribution(Distribution):
 						return cacheVarName(cached_variables, self, output)
 				return None
 
-			x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
-			y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+			if self.object in cached_variables.keys():
+				x, y = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+				if debug:
+					print("self.object already cached: ", (x,y))
+			else:
+				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 			smt_var = (x,y)
 			output = findVariableName(smt_file_path, cached_variables, 'methodDist', debug=debug)
 
@@ -1165,16 +1280,16 @@ class MethodDistribution(Distribution):
 
 		return cacheVarName(cached_variables, self, output)
 
-	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.object, Samplable) and not isConditioned(self.object):
-			self.object.conditionforSMT(condition, conditioned_bool)
-		for arg in self.arguments:
-			if isinstance(arg, Samplable) and not isConditioned(arg):
-				arg.conditionforSMT(condition, conditioned_bool)
-		for kwarg in self.kwargs:
-			if isinstance(kwarg, Samplable) and not isConditioned(kwarg):
-				kwarg.conditionforSMT(condition, conditioned_bool)
-		return None
+	# def conditionforSMT(self, condition, conditioned_bool):
+	# 	if isinstance(self.object, Samplable) and not isConditioned(self.object):
+	# 		self.object.conditionforSMT(condition, conditioned_bool)
+	# 	for arg in self.arguments:
+	# 		if isinstance(arg, Samplable) and not isConditioned(arg):
+	# 			arg.conditionforSMT(condition, conditioned_bool)
+	# 	for kwarg in self.kwargs:
+	# 		if isinstance(kwarg, Samplable) and not isConditioned(kwarg):
+	# 			kwarg.conditionforSMT(condition, conditioned_bool)
+	# 	return None
 
 	def sampleGiven(self, value):
 		args = []
@@ -1274,7 +1389,9 @@ class AttributeDistribution(Distribution):
 			if isinstance(obj, Options):
 				if obj.checkOptionsType(roads.NetworkElement):
 					networkObjs = obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
-
+					if obj in cached_variables.keys():
+						output_smt = cached_variables[obj]
+						cacheVarName(cached_variables, self, output_smt)
 					return networkObjs
 				else: 
 					print("NEW CASE: AttributeDistribution type(self.object): ", type(obj))
@@ -1286,6 +1403,9 @@ class AttributeDistribution(Distribution):
 				networkObj = obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 				if networkObj is None:
 					return None
+				if obj in cached_variables.keys():
+					output_smt = cached_variables[obj]
+					cacheVarName(cached_variables, self, output_smt)
 				return Options(outputObjs)
 
 			elif isinstance(obj, OperatorDistribution):
@@ -1308,8 +1428,15 @@ class AttributeDistribution(Distribution):
 								possibleRegions.append(reg)
 						if possibleRegions == []:
 							return None
+
+						if obj in cached_variables.keys():
+							output_smt = cached_variables[obj]
+							cacheVarName(cached_variables, self, output_smt)
 						return Options(possibleRegions)
 					else:
+						if obj in cached_variables.keys():
+							output_smt = cached_variables[obj]
+							cacheVarName(cached_variables, self, output_smt)
 						return regionOptions
 				else:
 					print("NEW CASE: AttributeDistribution type(self.object): ", type(obj))
@@ -1373,13 +1500,13 @@ class OperatorDistribution(Distribution):
 		self.object = obj
 		self.operands = operands
 
-	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.object._conditioned, Samplable) and not isConditioned(self.object._conditioned):
-			self.object._conditioned.conditionforSMT(condition, conditioned_bool)
-		for op in self.operands:
-			if isinstance(op._conditioned, Samplable) and not isConditioned(op._conditioned):
-				op._conditioned.conditionforSMT(condition, conditioned_bool)
-		return None
+	# def conditionforSMT(self, condition, conditioned_bool):
+	# 	if isinstance(self.object._conditioned, Samplable) and not isConditioned(self.object._conditioned):
+	# 		self.object._conditioned.conditionforSMT(condition, conditioned_bool)
+	# 	for op in self.operands:
+	# 		if isinstance(op._conditioned, Samplable) and not isConditioned(op._conditioned):
+	# 			op._conditioned.conditionforSMT(condition, conditioned_bool)
+	# 	return None
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode = True):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
@@ -1388,8 +1515,7 @@ class OperatorDistribution(Distribution):
 		"""
 		if debug:
 			print( "OperatorDistribution")
-			print( "operator: "+str(self.operator))
-			print( "type(operator): "+str(type(self.operator)))
+			print( "operator: "+self.operator)
 			print( "type(object): "+str(type(self.object._conditioned)))
 			for op in self.operands:
 				print( "type(operand): "+str(type(op)))
@@ -1401,7 +1527,7 @@ class OperatorDistribution(Distribution):
 
 		if encode and self in cached_variables.keys():
 			if debug:
-				print( "OperatorDistribution already exists in cached_variables dict")
+				print( "OperatorDistribution already exists in cached_variables dict: ", cached_variables[self])
 			return cached_variables[self]
 
 		output = findVariableName(smt_file_path, cached_variables, 'opdist', debug=debug)
@@ -1494,15 +1620,15 @@ class OperatorDistribution(Distribution):
 				if not encode:
 					return Options(possibleRegions)
 
-				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
-				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+				if self.object in cached_variables.keys():
+					x, y = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+					if debug:
+						print("self.object already cached: ", (x,y))
+				else:
+					x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+					y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 				output = (x,y)
 
-				# for reg in possibleRegions:
-					# region.encodeToSMT(smt_file_path, cached_variables, output, debug=debug)
-					# reg_point = reg.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
-					# (x_cond, y_cond) = vector_operation_smt(reg_point, "equal", smt_var)
-					# writeSMTtoFile(smt_file_path, smt_assert(None, smt_and(x_cond, y_cond)))
 				import shapely.geometry.multipolygon
 				polygonalRegions = []
 				for elem in possibleRegions:
@@ -1548,10 +1674,15 @@ class OperatorDistribution(Distribution):
 							return cacheVarName(cached_variables, self, output)
 					return None
 
-				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
-				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
-				output = findVariableName(smt_file_path, cached_variables, 'opdist', debug=debug)
+				if self.object in cached_variables.keys():
+					x, y = cached_variables[self.object]
+					if debug:
+						print("self.object already cached: ", (x,y))
+				else:
+					x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+					y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 				smt_var = (x,y)
+				output = findVariableName(smt_file_path, cached_variables, 'opdist', debug=debug)
 
 				import scenic.domains.driving.roads as roads
 				assert(optionsRegion.checkOptionsType(roads.NetworkElement))
@@ -1700,12 +1831,12 @@ class Range(Distribution):
 		self.low = low
 		self.high = high
 
-	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.low, Samplable) and not isConditioned(self.low):
-			self.low.conditionforSMT(condition, conditioned_bool)
-		if isinstance(self.high, Samplable) and not isConditioned(self.high):
-			self.high.conditionforSMT(condition, conditioned_bool)
-		return None
+	# def conditionforSMT(self, condition, conditioned_bool):
+	# 	if isinstance(self.low, Samplable) and not isConditioned(self.low):
+	# 		self.low.conditionforSMT(condition, conditioned_bool)
+	# 	if isinstance(self.high, Samplable) and not isConditioned(self.high):
+	# 		self.high.conditionforSMT(condition, conditioned_bool)
+	# 	return None
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		"""
@@ -1781,12 +1912,12 @@ class Normal(Distribution):
 		self.mean = mean
 		self.stddev = stddev
 
-	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.mean, Samplable) and not isConditioned(self.mean):
-			self.mean.conditionforSMT(condition, conditioned_bool)
-		if isinstance(self.stddev, Samplable) and not isConditioned(self.stddev):
-			self.stddev.conditionforSMT(condition, conditioned_bool)
-		return None
+	# def conditionforSMT(self, condition, conditioned_bool):
+	# 	if isinstance(self.mean, Samplable) and not isConditioned(self.mean):
+	# 		self.mean.conditionforSMT(condition, conditioned_bool)
+	# 	if isinstance(self.stddev, Samplable) and not isConditioned(self.stddev):
+	# 		self.stddev.conditionforSMT(condition, conditioned_bool)
+	# 	return None
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
@@ -1882,12 +2013,12 @@ class TruncatedNormal(Normal):
 		self.low = low
 		self.high = high
 
-	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.low, Samplable) and not isConditioned(self.low):
-			self.low.conditionforSMT(condition, conditioned_bool)
-		if isinstance(self.high, Samplable) and not isConditioned(self.high):
-			self.high.conditionforSMT(condition, conditioned_bool)
-		return None
+	# def conditionforSMT(self, condition, conditioned_bool):
+	# 	if isinstance(self.low, Samplable) and not isConditioned(self.low):
+	# 		self.low.conditionforSMT(condition, conditioned_bool)
+	# 	if isinstance(self.high, Samplable) and not isConditioned(self.high):
+	# 		self.high.conditionforSMT(condition, conditioned_bool)
+	# 	return None
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
@@ -1998,12 +2129,12 @@ class DiscreteRange(Distribution):
 		self.cumulativeWeights = tuple(itertools.accumulate(weights))
 		self.options = tuple(range(low, high+1))
 
-	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.low, Samplable) and not isConditioned(self.low):
-			self.low.conditionforSMT(condition, conditioned_bool)
-		if isinstance(self.high, Samplable) and not isConditioned(self.high):
-			self.high.conditionforSMT(condition, conditioned_bool)
-		return None
+	# def conditionforSMT(self, condition, conditioned_bool):
+	# 	if isinstance(self.low, Samplable) and not isConditioned(self.low):
+	# 		self.low.conditionforSMT(condition, conditioned_bool)
+	# 	if isinstance(self.high, Samplable) and not isConditioned(self.high):
+	# 		self.high.conditionforSMT(condition, conditioned_bool)
+	# 	return None
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
@@ -2229,27 +2360,27 @@ class Options(MultiplexerDistribution):
 
 		return None
 
-	def conditionforSMT(self, condition, conditioned_bool):
-		import scenic.domains.driving.roads as roads
-		import scenic.core.vectors as vectors
+	# def conditionforSMT(self, condition, conditioned_bool):
+	# 	import scenic.domains.driving.roads as roads
+	# 	import scenic.core.vectors as vectors
 
-		if isinstance(condition, vectors.Vector):
-			# if a vector is given to condition, then search through all options of regions and 
-			# condition to the one that contains 
-			import scenic.core.regions as regions
-			satisfying_options = []
+	# 	if isinstance(condition, vectors.Vector):
+	# 		# if a vector is given to condition, then search through all options of regions and 
+	# 		# condition to the one that contains 
+	# 		import scenic.core.regions as regions
+	# 		satisfying_options = []
 
-			for opt in self.options:
-				assert isinstance(opt, regions.Region)
-				if opt.containsPoint(condition):
-					satisfying_options.append(opt)
-					conditioned_bool = True
+	# 		for opt in self.options:
+	# 			assert isinstance(opt, regions.Region)
+	# 			if opt.containsPoint(condition):
+	# 				satisfying_options.append(opt)
+	# 				conditioned_bool = True
 				
-				if satisfying_options != []:
-					self.conditionTo(satisfying_options)
-					return None
+	# 			if satisfying_options != []:
+	# 				self.conditionTo(satisfying_options)
+	# 				return None
 
-		raise NotImplementedError
+	# 	raise NotImplementedError
 
 	@staticmethod
 	def makeSelector(n, weights):

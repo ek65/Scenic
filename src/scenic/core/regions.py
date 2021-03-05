@@ -282,6 +282,13 @@ class PointInRegionDistribution(VectorDistribution):
 				print( "PointInRegionDistribution already cached")
 			return cached_variables[self]
 
+		if isinstance(self._conditioned, Vector):
+			if debug:
+				print( "PointInRegionDistribution is conditioned : " + str(self._conditioned))
+			vector = self._conditioned
+			smt_var = (str(vector.x), str(vector.y))
+			return cacheVarName(cached_variables, self, smt_var)
+
 		if smt_var is None:
 			x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
 			y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
@@ -292,14 +299,7 @@ class PointInRegionDistribution(VectorDistribution):
 		else:
 			region = self.region
 
-		if isinstance(self._conditioned, Vector):
-			if debug:
-				print( "PointInRegionDistribution is conditioned : " + str(self._conditioned))
-			vector = self._conditioned
-			smt_var = (str(vector.x), str(vector.y))
-			return cacheVarName(cached_variables, self, smt_var)
-
-		elif isinstance(region, UniformDistribution):
+		if isinstance(region, UniformDistribution):
 			possibleRegions = region.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
 			import scenic.core.distributions as dist
 			import scenic.domains.driving.roads as roads

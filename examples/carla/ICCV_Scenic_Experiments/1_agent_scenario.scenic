@@ -3,4 +3,4 @@ param carla_map = 'Town05'
 model scenic.simulators.carla.model #located in scenic/simulators/carla/model.scenic
 
 ego = Car on lane, facing Range(-10, 10) deg relative to roadDirection
-require (distance from intersectionRegion) > 20
+require (distance from intersectionRegion) > 30

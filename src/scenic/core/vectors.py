@@ -380,6 +380,11 @@ class Vector(Samplable, collections.abc.Sequence):
 		x = checkAndEncodeSMT(smt_file_path, cached_variables, self.x, debug = debug)
 		y = checkAndEncodeSMT(smt_file_path, cached_variables, self.y, debug = debug)
 
+		if debug:
+			print("angle: ", angle)
+			print("x: ", x)
+			print("y: ", y)
+
 		cos = "(cos "+angle+")"
 		sin = "(sin "+angle+")"
 

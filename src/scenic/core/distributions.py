@@ -1669,7 +1669,15 @@ class OperatorDistribution(Distribution):
 					vector = self.operands[0]._conditioned
 					for region in optionsRegion.options:
 						if region.containsPoint(vector):
-							heading = str(region.nominalDirectionsAt(vector)[0])
+							heading = region.nominalDirectionsAt(vector)
+							if debug:
+								print("OperatorDistribution __getitem__ heading: ", heading)
+							if isinstance(heading, tuple):
+								heading_smt = str(heading[0])
+							elif isinstance(heading, (float, int)):
+								heading_smt = str(heading)
+							else:
+								raise NotImplementedError
 							writeSMTtoFile(smt_file_path, smt_assert("equal", heading, output))
 							return cacheVarName(cached_variables, self, output)
 					return None

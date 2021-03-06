@@ -3,8 +3,9 @@ param carla_map = 'Town05'
 model scenic.simulators.carla.model #located in scenic/simulators/carla/model.scenic
 
 ego = Car on laneSection, facing Range(-10, 10) deg relative to roadDirection,
+		with viewAngle 135 deg,
 		with visibleDistance 30
-car = Car on visible lane, facing toward ego
+car = Pedestrian on visible lane, facing toward ego
 
 # spot = OrientedPoint on lane
 # ego = Car behind spot by Range(3,5),

@@ -5,9 +5,7 @@ And, other cars' headings differs from the ego's by 50 to 135 degrees to the lef
 The other2's heading differs from the ego's by 50 to 135 degrees to the right.
 """
 
-param map = localPath('../../tests/formats/opendrive/maps/CARLA/Town05.xodr') 
-param carla_map = 'Town05'
-model scenic.domains.driving.model_nusc
+model scenic.simulators.carla.model
 
 ego = Car on road, facing Range(-15,15) deg relative to roadDirection
 other1 = Car on intersection,

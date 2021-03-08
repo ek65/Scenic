@@ -51,11 +51,6 @@ def smt_equal(var1, var2):
 	assert(isinstance(var2, str))
 	return "(= "+var1+" "+var2+")"
 
-# def smt_mod(var1, var2):
-# 	assert(isinstance(var1, str))
-# 	assert(isinstance(var2, str))
-# 	return "(mod "+var1+" "+var2+")"
-
 def smt_lessThan(var1, var2):
 	assert(isinstance(var1, str))
 	assert(isinstance(var2, str))
@@ -142,7 +137,7 @@ def vector_operation_smt(vector1, operation, vector2):
 	return (x, y)
 
 def normalizeAngle_SMT(smt_file_path, cached_variables, original_angle, debug=False):
-	angle = findVariableName(smt_file_path, cached_variables, 'angle', debug=debug)
+	# angle = findVariableName(smt_file_path, cached_variables, 'angle', debug=debug)
 	# ite1 = smt_assert("equal", angle , smt_ite(smt_lessThan("0", original_angle), \
 	# 	smt_mod(original_angle, "6.2832"), original_angle))
 	# ite2 = smt_assert("equal", angle , smt_ite(smt_lessThan(original_angle, "0"), \
@@ -153,8 +148,10 @@ def normalizeAngle_SMT(smt_file_path, cached_variables, original_angle, debug=Fa
 
 	# theta = findVariableName(smt_file_path, cached_variables, 'theta', debug=debug)
 	# theta_encoding = smt_assert("equal", theta, angle)          
-	angleTo_encoding1 = smt_assert("equal", angle, smt_ite(smt_lessThanEq("3.1416",angle), smt_subtract(angle,"6.2832"), angle))
-	angleTo_encoding2 = smt_assert("equal", angle, smt_ite(smt_lessThanEq(angle, "-3.1416"), smt_add(angle,"6.2832"), angle))
+	angleTo_encoding1 = smt_assert("equal", original_angle, smt_ite(smt_lessThanEq("3.1416",original_angle), \
+		smt_subtract(original_angle,"6.2832"), original_angle))
+	angleTo_encoding2 = smt_assert("equal", original_angle, smt_ite(smt_lessThanEq(original_angle, "-3.1416"), \
+		smt_add(original_angle,"6.2832"), original_angle))
 
 	# writeSMTtoFile(smt_file_path, theta_encoding)
 	writeSMTtoFile(smt_file_path, angleTo_encoding1)
@@ -1389,6 +1386,7 @@ class AttributeDistribution(Distribution):
 			if isinstance(obj, Options):
 				if obj.checkOptionsType(roads.NetworkElement):
 					networkObjs = obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+
 					if obj in cached_variables.keys():
 						output_smt = cached_variables[obj]
 						cacheVarName(cached_variables, self, output_smt)
@@ -1584,6 +1582,8 @@ class OperatorDistribution(Distribution):
 				distOverRegions = self.object.encodeToSMT(smt_file_path, cached_variables, debug, encode=False)
 				if debug:
 					print("OperatorDistribution __call__ distOverRegions: ", distOverRegions)
+				if distOverRegions is None:
+					return None
 				assert(isinstance(distOverRegions, Options))
 				possibleRegions = []
 				otherRegion = self.operands[0]

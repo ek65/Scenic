@@ -329,6 +329,8 @@ class PointInRegionDistribution(VectorDistribution):
 		
 		else:
 			point = region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
+			if point is None:
+				return None
 			(x_cond, y_cond) = vector_operation_smt(point, "equal", smt_var)
 			writeSMTtoFile(smt_file_path, smt_assert(None, smt_and(x_cond, y_cond)))
 
@@ -515,8 +517,43 @@ class CircularRegion(Region):
 		self.circumcircle = (self.center, self.radius)
 		self.resolution = resolution
 
-	def encodeToSMT(self, smt_file_path, cached_variables, obj, debug=False):
-		raise NotImplementedError
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False):
+		if self in cached_variables.keys():
+			if debug:
+				print( "SectorRegion already cached")
+			pt_smt = cached_variables[self]
+			if smt_var is None:
+				return pt_smt
+			else:
+				smt = smt_assert(None, vector_operation_smt(smt_var, "equal", pt_smt))
+				writeSMTtoFile(smt_file_path, smt)
+				return smt_var
+		# Instantiate variables to return
+		if smt_var is None:
+			x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+			y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+			smt_var = (x,y)
+
+		(output_x, output_y) = smt_var
+
+		# Check whether there are any other distributions to encode first
+		center = checkAndEncodeSMT(smt_file_path, cached_variables, self.center, debug=debug)
+		(center_x, center_y) = (center[0], center[1])
+		radius = checkAndEncodeSMT(smt_file_path, cached_variables, self.radius, debug=debug)
+
+		# Encode and write to file, a contraint for a circle
+		if debug: 
+			print( "encode circle of ego_visibleRegion")
+		shifted_output_x = smt_subtract(output_x, center_x)
+		shifted_output_y = smt_subtract(output_y, center_y)
+		square_center_x = smt_multiply(shifted_output_x, shifted_output_x)
+		square_center_y = smt_multiply(shifted_output_y, shifted_output_y)
+		square_radius = smt_multiply(radius, radius)
+		summation  = smt_add(square_center_x, square_center_y)
+		circle_smt = smt_lessThanEq(summation, square_radius)
+		writeSMTtoFile(smt_file_path, smt_assert(None, circle_smt))
+
+		return cacheVarName(cached_variables, self, smt_var)
 
 	def conditionforSMT(self, condition, conditioned_bool):
 		raise NotImplementedError
@@ -601,7 +638,13 @@ class SectorRegion(Region):
 		if self in cached_variables.keys():
 			if debug:
 				print( "SectorRegion already cached")
-			return cached_variables[self]
+			pt_smt = cached_variables[self]
+			if smt_var is None:
+				return pt_smt
+			else:
+				smt = smt_assert(None, vector_operation_smt(smt_var, "equal", pt_smt))
+				writeSMTtoFile(smt_file_path, smt)
+				return smt_var
 
 		""" Let a line defined by two points `a` and `b`, with a -> b vector direction of interest,
 		and let c be a point of interest of which we want to find its on either left or right of the line
@@ -1112,10 +1155,16 @@ class PolygonalRegion(Region):
 		import shapely.geometry.polygon as polygon
 		assert(not isinstance(self.polygons, polygon.Polygon))
 
-		if self in set(cached_variables.keys()):
+		if self in cached_variables.keys():
 			if debug:
-				print( "PolygonalRegion ALREADY EXISTS IN CACHED_VARIABLES")
-			return cached_variables[self]
+				print( "PolygonalRegion already cached")
+			pt_smt = cached_variables[self]
+			if smt_var is None:
+				return pt_smt
+			else:
+				smt = smt_assert(None, vector_operation_smt(smt_var, "equal", pt_smt))
+				writeSMTtoFile(smt_file_path, smt)
+				return smt_var
 
 		if smt_var is None:
 			x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)

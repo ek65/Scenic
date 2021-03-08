@@ -9,6 +9,7 @@ model scenic.simulators.carla.model
 lanesWithRightLane = filter(lambda i: i._laneToRight, network.laneSections)
 egoLane = Uniform(*lanesWithRightLane)
 
-ego = Car on egoLane, facing Range(-15,15) deg relative to roadDirection
+ego = Car on egoLane, 
+		facing Range(-15,15) deg relative to roadDirection
 cutInCar = Car on egoLane._laneToRight,
 			facing -1* Range(15, 30) deg relative to roadDirection

@@ -137,26 +137,23 @@ def vector_operation_smt(vector1, operation, vector2):
 	return (x, y)
 
 def normalizeAngle_SMT(smt_file_path, cached_variables, original_angle, debug=False):
-	# angle = findVariableName(smt_file_path, cached_variables, 'angle', debug=debug)
-	# ite1 = smt_assert("equal", angle , smt_ite(smt_lessThan("0", original_angle), \
-	# 	smt_mod(original_angle, "6.2832"), original_angle))
-	# ite2 = smt_assert("equal", angle , smt_ite(smt_lessThan(original_angle, "0"), \
-	# 	smt_mod(original_angle, "-6.2832"), original_angle))
-
-	# writeSMTtoFile(smt_file_path, ite1)
-	# writeSMTtoFile(smt_file_path, ite2)
-
-	# theta = findVariableName(smt_file_path, cached_variables, 'theta', debug=debug)
+	theta = findVariableName(smt_file_path, cached_variables, 'theta', debug=debug)
 	# theta_encoding = smt_assert("equal", theta, angle)          
-	angleTo_encoding1 = smt_assert("equal", original_angle, smt_ite(smt_lessThanEq("3.1416",original_angle), \
-		smt_subtract(original_angle,"6.2832"), original_angle))
-	angleTo_encoding2 = smt_assert("equal", original_angle, smt_ite(smt_lessThanEq(original_angle, "-3.1416"), \
-		smt_add(original_angle,"6.2832"), original_angle))
+	# angleTo_encoding1 = smt_assert("equal", theta, smt_ite(smt_lessThanEq("3.1416",original_angle), \
+	# 	smt_subtract(original_angle,"6.2832"), original_angle))
+	# angleTo_encoding2 = smt_assert("equal", theta, smt_ite(smt_lessThanEq(original_angle, "-3.1416"), \
+	# 	smt_add(original_angle,"6.2832"), original_angle))
 
-	# writeSMTtoFile(smt_file_path, theta_encoding)
-	writeSMTtoFile(smt_file_path, angleTo_encoding1)
-	writeSMTtoFile(smt_file_path, angleTo_encoding2)
-	return angle
+	angleTo_encoding1 = smt_ite(smt_lessThanEq("3.1416",original_angle), \
+		smt_subtract(original_angle,"6.2832"), original_angle)
+	angleTo_encoding2 = smt_ite(smt_lessThanEq(original_angle, "-3.1416"), \
+		smt_add(original_angle,"6.2832"), angleTo_encoding1)
+	smt_encoding = smt_assert("equal", theta, angleTo_encoding2)
+
+	# writeSMTtoFile(smt_file_path, angleTo_encoding1)
+	# writeSMTtoFile(smt_file_path, angleTo_encoding2)
+	writeSMTtoFile(smt_file_path, smt_encoding)
+	return theta
 
 def findVariableName(smt_file_path, cached_variables, class_name, class_type=None, debug=False):
 	""" for smt encoding, to avoid duplicate naming, add a number at then end for differentiation 
@@ -288,7 +285,8 @@ def refineCenterlinePts(centerlinePts, elem, intersection):
 			refinedCenterlinePts.append((x1,y1))
 		else:
 			angle_difference = abs(heading-prev_heading)
-			if 0.01745 < angle_difference and angle_difference < math.pi/2: # radians (about 5 degrees)
+			# if 0.1745 < angle_difference and angle_difference < math.pi/2: # radians (about 5 degrees)
+			if 0.01745 < angle_difference and angle_difference < math.pi/2: # radians (about 1 degrees)
 				refinedCenterlinePts.append((x1,y1))
 				prev_heading = heading
 			else:
@@ -1704,11 +1702,17 @@ class OperatorDistribution(Distribution):
 			import scenic.core.vectors as vectors
 			if debug:
 				print("OperatorDist operator angleTo case")
-			self_vector_smt = self.object.encodeToSMT(smt_file_path, cached_variables, debug)
-			other_vector_smt= self.operands[0].encodeToSMT(smt_file_path, cached_variables, debug)
-			self_vector = vectors.Vector(self_vector_smt[0], self_vector_smt[1])
-			other_vector = vectors.Vector(other_vector_smt[0], other_vector_smt[1])
-			output = self_vector.angleToEncodeSMT(smt_file_path, cached_variables, other_vector_smt, debug)
+			# self_vector_smt = self.object.encodeToSMT(smt_file_path, cached_variables, debug)
+			# other_vector_smt= self.operands[0].encodeToSMT(smt_file_path, cached_variables, debug)
+			# if debug:
+			# 	print("self_vector_smt: ", self_vector_smt)
+			# 	print("other_vector_smt: ", other_vector_smt)
+			# self_vector = vectors.Vector(self_vector_smt[0], self_vector_smt[1])
+			# other_vector = vectors.Vector(other_vector_smt[0], other_vector_smt[1])
+			# output = self_vector.angleToEncodeSMT(smt_file_path, cached_variables, other_vector_smt, debug)
+			assert(isConditioned(self.object) and isConditioned(self.operands[0]))
+			angle = self.object._conditioned.angleTo(self.operands[0]._conditioned)
+			writeSMTtoFile(smt_file_path, smt_assert("equal", output, str(angle)))
 
 		else:
 			print("self.operator: " + str(self.operator))

@@ -73,6 +73,13 @@ class VectorOperatorDistribution(VectorDistribution):
 			print( "self.operator: "+str(self.operator))
 			print( "self.operands: "+str(self.operands))
 
+		if isConditioned(self) and isinstance(self._conditioned, Vector):
+			if debug:
+				print("self is conditioned to vector: ", self._conditioned)
+			vector = self._conditioned
+			vector_smt = (str(vector.x), str(vector.y))
+			return cacheVarName(cached_variables, self, vector_smt)
+
 		if not encode:
 			return self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
 
@@ -133,7 +140,6 @@ class VectorOperatorDistribution(VectorDistribution):
 		elif self.operator == 'angleTo':
 			if debug:
 				print( "angleTo")
-
 			assert(isinstance(self.operands[0], Vector))
 			output_angle = obj.angleToEncodeSMT(smt_file_path, cached_variables, self.operands[0], debug=debug)
 			return cacheVarName(cached_variables, self, output_angle)
@@ -476,13 +482,16 @@ class Vector(Samplable, collections.abc.Sequence):
 	def angleToEncodeSMT(self, smt_file_path, cached_variables, other, debug=False):
 		if debug:
 			print( "angleTo")          
-		(other_x, other_y) = checkAndEncodeSMT(smt_file_path, cached_variables, other, debug = debug)
-		(vec_x, vec_y) = checkAndEncodeSMT(smt_file_path, cached_variables, self, debug = debug)
-		dx = smt_subtract(other_x, vec_x)
-		dy = smt_subtract(other_y, vec_y)
-		smt_atan = "(arctan "+smt_divide(dy, dx)+")"
-		subtraction = smt_subtract(smt_atan, smt_divide('3.1416','2'))
-		theta = normalizeAngle_SMT(smt_file_path, cached_variables, subtraction, debug=debug)
+		# (other_x, other_y) = checkAndEncodeSMT(smt_file_path, cached_variables, other, debug = debug)
+		# (vec_x, vec_y) = checkAndEncodeSMT(smt_file_path, cached_variables, self, debug = debug)
+		# dx = smt_subtract(other_x, vec_x)
+		# dy = smt_subtract(other_y, vec_y)
+		# smt_atan = "(arctan "+dy+" "+dx+")"
+		# subtraction = smt_subtract(smt_atan, smt_divide('3.1416','2'))
+		raise NotImplementedError
+		# theta = normalizeAngle_SMT(smt_file_path, cached_variables, subtraction, debug=debug)
+		theta = findVariableName(smt_file_path, cached_variables, 'theta', debug=debug)
+		writeSMTtoFile(smt_file_path, smt_assert("equal", theta, subtraction))
 		return theta
 
 	@scalarOperator

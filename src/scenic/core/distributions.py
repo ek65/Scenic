@@ -285,8 +285,8 @@ def refineCenterlinePts(centerlinePts, elem, intersection):
 			refinedCenterlinePts.append((x1,y1))
 		else:
 			angle_difference = abs(heading-prev_heading)
-			# if 0.1745 < angle_difference and angle_difference < math.pi/2: # radians (about 5 degrees)
-			if 0.01745 < angle_difference and angle_difference < math.pi/2: # radians (about 1 degrees)
+			if 0.1745 < angle_difference and angle_difference < math.pi/2: # radians (about 5 degrees)
+			# if 0.01745 < angle_difference and angle_difference < math.pi/2: # radians (about 1 degrees)
 				refinedCenterlinePts.append((x1,y1))
 				prev_heading = heading
 			else:

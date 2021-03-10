@@ -1159,10 +1159,13 @@ class PolygonalRegion(Region):
 			if debug:
 				print( "PolygonalRegion already cached")
 			pt_smt = cached_variables[self]
+			if debug:
+				print("pt_smt: ", pt_smt)
 			if smt_var is None:
 				return pt_smt
 			else:
-				smt = smt_assert(None, vector_operation_smt(smt_var, "equal", pt_smt))
+				x_cond, y_cond = vector_operation_smt(smt_var, "equal", pt_smt)
+				smt = smt_assert(None, smt_and(x_cond,y_cond))
 				writeSMTtoFile(smt_file_path, smt)
 				return smt_var
 

@@ -99,7 +99,10 @@ if 'map_options' not in globalParameters:
 
 #: The union of all drivable roads, including intersections but not shoulders
 #: or parking lanes.
+anyArea : NetworkElement = Uniform(*network.lanes, *network.sidewalks, *network.intersections)
+
 drivableRoad : NetworkElement = Uniform(*network.lanes, *network.intersections)
+drivableRegion : Region = network.drivableRegion
 
 road : Road = Uniform(*network.roads)
 roadRegion : Region = network.drivableRegion

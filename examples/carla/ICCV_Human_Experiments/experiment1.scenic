@@ -9,7 +9,7 @@ ego = Car on drivableRoad,
 		facing Range(-15,15) deg relative to roadDirection,
 		with visibleDistance 50,
 		with viewAngle 135 deg
-ped = Pedestrian on drivableRoad,
+ped = Pedestrian on lanesAndSidewalks,
 		with regionContainedIn roadRegion,
 		facing Range(-180, 180) deg
 

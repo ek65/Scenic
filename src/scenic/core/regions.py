@@ -30,7 +30,7 @@ from scenic.core.errors import RuntimeParseError
 def VectorToTuple(vector):
 	return (vector.x, vector.y)
 
-def pruneValidLines(smt_file_path, cached_variables, lineString, debug=False):
+def pruneValidLines(smt_file_path, cached_variables, lineString, intersectingPolygon, debug=False):
 	""" 
 	Output = outputs a list of triangle polygons in `region_polygon` that intersects with ego's visible region (=sector region)
 
@@ -44,9 +44,6 @@ def pruneValidLines(smt_file_path, cached_variables, lineString, debug=False):
 	"""
 	if debug:
 		print( "pruneValidLines")
-
-	oriented_vector = cached_variables['ego']
-	heading = oriented_vector.heading
 
 	# if not 'ego_visibleRegion' in cached_variables.keys():
 	# 	if debug:
@@ -66,12 +63,13 @@ def pruneValidLines(smt_file_path, cached_variables, lineString, debug=False):
 
 	lineString_list = []
 	if isinstance(lineString, shapely.geometry.LineString):
-		lineString_list.append(lineString)
+		if not lineString.intersection(intersectingPolygon).is_empty:
+			lineString_list.append(lineString)
 	elif isinstance(lineString, shapely.geometry.MultiLineString):
 		for line in list(lineString.geoms):
-			intersection = line & sector
-			if intersection != shapely.geometry.LineString():
-				lineString_list.append(intersection)
+			intersection = line.intersection(intersectingPolygon)
+			if not intersection.is_empty:
+				lineString_list.append(line)
 
 	return lineString_list
 
@@ -81,87 +79,55 @@ def encodeLine_SMT(smt_file_path, cached_variables, lineString_list, point, debu
 	if debug:
 		print( "encodeLine_SMT")
 
-	assert(isinstance(lineString_list, list))
-	assert(lineString_list != [])
+	if lineString_list == []:
+		if debug:
+			print("encodeLine_SMT() lineString_list is empty")
+		return None
 
-	# parse by line segments:
+	# # parse by line segments:
 	line_segments = []
 	for line in lineString_list:
-		coords = list(line.coords)
-		for i in range(len(coords) - 1):
-			line_segments.append([ coords[i], coords[i+1] ])
+		line_segments.append(list(line.coords))
+
+	if debug:
+		for line in line_segments:
+			x_coords = []
+			y_coords = []
+			for pt in line:
+				x_coords.append(pt[0])
+				y_coords.append(pt[1])
+			plt.plot(x_coords, y_coords, color ='r')
+		plt.plot(*cached_variables['regionAroundEgo_polygon'].exterior.xy, color='g')
 
 	count = 0
 	for lineSeg in line_segments:
-		x = [lineSeg[0][0], lineSeg[0][1]]
-		y = [lineSeg[1][0], lineSeg[1][1]]
-		x.sort()
-		y.sort()
-		smt_x = [str(i) for i in x]
-		smt_y = [str(i) for i in y]
+		if len(lineSeg) < 2:
+			continue
+		for i in range(len(lineSeg)-1):
+			x1, x2 = lineSeg[i][0], lineSeg[i+1][0]
+			y1, y2 = lineSeg[i][1], lineSeg[i+1][1]
+			x = [x1, x2]
+			y = [y1, y2]
+			x.sort()
+			y.sort()
+			smt_x = [str(i) for i in x]
+			smt_y = [str(i) for i in y]
 
-		x_range_smt = smt_and(smt_lessThan(smt_x[0], point[0]), smt_lessThanEq(point[0], smt_x[1]))
-		y_range_smt = smt_and(smt_lessThan(smt_y[0], point[1]), smt_lessThanEq(point[1], smt_y[1]))
-		range_condition = smt_and(x_range_smt, y_range_smt)
-		slope = (y[1] - y[0]) / (x[1] - x[0])
-		offset = y[1] - slope * x[1] # b = y - a*x
-		line_encoding = smt_equal(point_var[1], smt_add(smt_multiply(slope, point_var[0]), offset)) # y = ax + b
+			x_range_smt = smt_and(smt_lessThan(smt_x[0], point[0]), smt_lessThanEq(point[0], smt_x[1]))
+			y_range_smt = smt_and(smt_lessThan(smt_y[0], point[1]), smt_lessThanEq(point[1], smt_y[1]))
+			range_condition = smt_and(x_range_smt, y_range_smt)
+			slope = float(y2-y1) / float(x2-x1)
+			offset = y1 - slope * x1 # b = y - a*x
+			line_encoding = smt_add(smt_multiply(str(slope), point[0]), str(offset)) # ax + b
 
-		if count == 0:
-			smt_encoding = smt_ite(range_condition, line_encoding, 'false')
-		else:
-			smt_encoding = smt_ite(range_condition, line_encoding, smt_encoding)
+			if count == 0:
+				smt_encoding = smt_ite(range_condition, line_encoding, '-1000')
+			else:
+				smt_encoding = smt_ite(range_condition, line_encoding, smt_encoding)
 
-		writeSMTtoFile(smt_file_path, smt_encoding)
+	writeSMTtoFile(smt_file_path, smt_assert("equal", point[1], smt_encoding))
+	writeSMTtoFile(smt_file_path, smt_assert("not", smt_equal(point[1], '-1000')))
 	return point
-
-# def pruneValidRegion(smt_file_path, cached_variables, region_polygon, debug=False):
-# 	""" 
-# 	Output = outputs a list of triangle polygons in `region_polygon` that intersects with ego's visible region (=sector region)
-
-# 	Input : 
-# 	ego_position := Vector as defined in Scenic
-# 	region_polygon := Shapely polygon or Multipolygon 
-# 	view_angle := view cone angle in degrees
-# 	radius := meters
-# 	resolution := in degrees, with how many points to approximate a circle
-
-# 	"""
-# 	if debug:
-# 		writeSMTtoFile(smt_file_path, "pruneValidRegion")
-
-# 	# oriented_vector = cached_variables['ego']
-# 	# heading = oriented_vector.heading
-
-# 	# if not 'ego_visibleRegion' in cached_variables.keys():
-# 	# 	if debug:
-# 	# 		writeSMTtoFile(smt_file_path, "ego_visibleRegion not in cached_variables.keys()")
-# 	# 	center = cached_variables['ego']
-# 	# 	radius = cached_variables['ego_view_radius']
-# 	# 	heading = cached_variables['ego'].heading
-# 	# 	angle = cached_variables['ego_viewAngle'] * math.pi / 180
-# 	# 	sectorRegion = SectorRegion(center, radius, heading, angle)
-# 	# 	cached_variables['ego_visibleRegion'] = sectorRegion
-# 	# 	sector = sectorRegion.polygon
-# 	# 	cached_variables['ego_sector_polygon'] = sector
-# 	# else:
-# 	# 	if debug:
-# 	# 		writeSMTtoFile(smt_file_path, "ego_visibleRegion already in cached_variables.keys()")
-# 	# 	sector = cached_variables['ego_visibleRegion'].polygon
-
-# 	region_polygon = list(region_polygon) if not isinstance(region_polygon, list) else region_polygon
-# 	## intersect the sector with region_polygon
-# 	intersecting_triangles = []
-# 	for polygon in region_polygon:
-# 		inter = sector & polygon
-# 		if inter != shapely.geometry.polygon.Polygon():
-# 			intersecting_triangles.append(polygon)
-# 	# 	if debug:
-# 	# 		plt.plot(*polygon.exterior.xy, color='g')
-# 	# if debug:
-# 	# 	plt.show()
-
-# 	return intersecting_triangles
 
 def encodePolygonalRegion_SMT(smt_file_path, cached_variables, triangles, smt_var, debug=False):
 	""" Assumption: the polygons given from polygon region will always be in triangles """
@@ -300,6 +266,8 @@ class PointInRegionDistribution(VectorDistribution):
 			region = self.region
 
 		if isinstance(region, UniformDistribution):
+			if debug:
+				print("PointInRegionDistribution UniformDistribution Case")
 			possibleRegions = region.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
 			import scenic.core.distributions as dist
 			import scenic.domains.driving.roads as roads
@@ -315,6 +283,8 @@ class PointInRegionDistribution(VectorDistribution):
 				# writeSMTtoFile(smt_file_path, smt_encoding)
 
 		elif isinstance(region, Options):
+			if debug:
+				print("PointInRegionDistribution Options Case")
 			import scenic.domains.driving.roads as roads
 			if encode and region._conditioned.checkOptionsType(roads.NetworkElement):
 				region.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
@@ -325,9 +295,16 @@ class PointInRegionDistribution(VectorDistribution):
 				raise NotImplementedError
 
 		elif isinstance(region, Region):
-			region.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
+			if debug:
+				print("PointInRegionDistribution Region Case")
+			output = region.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=encode)
+			if not encode:
+				return output
 		
 		else:
+			if debug:
+				print("PointInRegionDistribution Else Case")
+				print("type(region): ", type(region))
 			point = region.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 			if point is None:
 				return None
@@ -642,7 +619,8 @@ class SectorRegion(Region):
 			if smt_var is None:
 				return pt_smt
 			else:
-				smt = smt_assert(None, vector_operation_smt(smt_var, "equal", pt_smt))
+				x_cond, y_cond = vector_operation_smt(smt_var, "equal", pt_smt)
+				smt = smt_assert(None, smt_and(x_cond, y_cond))
 				writeSMTtoFile(smt_file_path, smt)
 				return smt_var
 
@@ -909,23 +887,28 @@ class PolylineRegion(Region):
 	def conditionforSMT(self, condition, conditioned_bool):
 		raise NotImplementedError
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug = False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug = False, encode=True):
 		if debug:
 			print( "PolyLineRegion")
 
-		if self in cached_variables.keys():
-			if debug:
-				print( "PolyLineRegion already cached")
-			return cached_variables[self]
+		# if self in cached_variables.keys():
+		# 	if debug:
+		# 		print( "PolyLineRegion already cached")
+		# 	return cached_variables[self]
 
 		if smt_var is None:
 			x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
 			y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 			smt_var = (x,y)
 
-		linStringList = pruneValidLines(smt_file_path, cached_variables, self.lineString, debug=debug)
-		encodeLine_SMT(smt_file_path, cached_variables, linStringList, smt_var, debug=debug)
-		return cacheVarName(cached_variables, self,  smt_var)
+		intersectingRegion = cached_variables['regionAroundEgo_polygon']
+		lineStringList = pruneValidLines(smt_file_path, cached_variables, self.lineString, intersectingRegion, debug=debug)
+		if not encode:
+			import scenic.core.distributions as dist
+			return dist.Options(lineStringList)
+		encodeLine_SMT(smt_file_path, cached_variables, lineStringList, smt_var, debug=debug)
+		# return cacheVarName(cached_variables, self, smt_var)
+		return smt_var
 
 	@classmethod
 	def segmentsOf(cls, lineString):
@@ -1470,15 +1453,37 @@ class IntersectionRegion(Region):
 			if isinstance(region, Samplable) and not isConditioned(region):
 				region.conditionforSMT(condition, conditioned_bool)
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False, encode=True):
 		if debug:
 			print( "IntersectionRegion")
 			
-		if self in cached_variables.keys():
+		if encode and self in cached_variables.keys():
 			if debug:
 				print( "IntersectionRegion already exists in cached_variables")
 			output_var = cached_variables[self]
 			return output_var
+
+		if not encode:
+			sectorRegion, polylineRegion, polygonalRegion = None, None, None
+			for region in self.regions:
+				if isinstance(region, SectorRegion):
+					sectorRegion = region
+				if isinstance(region, PolylineRegion):
+					polylineRegion = region 
+				if isinstance(region, PolygonalRegion):
+					polygonalRegion = region
+
+			if sectorRegion is not None and polylineRegion is not None:
+				lineString = polylineRegion.lineString
+				intersectingPolygon = sectorRegion.polygon
+				import scenic.core.distributions as dist
+				output = pruneValidLines(smt_file_path, cached_variables, lineString, intersectingPolygon, debug=False)
+				if output is None or output == []:
+					return None
+				else:
+					return dist.Options(output)
+			else:
+				raise NotImplementedError
 
 		if smt_var is None:
 			x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
@@ -1489,7 +1494,7 @@ class IntersectionRegion(Region):
 			region.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug)
 			# smt_encoding = vector_operation_smt( smt_var, "equal", output_var)
 			# smt_encoding = smt_assert(None, smt_encoding)
-			writeSMTtoFile(smt_file_path, smt_encoding)
+			# writeSMTtoFile(smt_file_path, smt_encoding)
 
 		return cacheVarName(cached_variables, self, smt_var)
 

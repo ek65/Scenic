@@ -251,24 +251,32 @@ def cacheVarName(cached_variables, obj, var_names):
 def refineCenterlinePts(centerlinePts, elem, intersection):
 	import scenic.core.vectors as vectors
 	import shapely.geometry
+	import scenic.domains.driving.roads as roads
 
 	refinedCenterlinePts = []
-	if len(centerlinePts) == 0:
-
-		# find the two points closest to the intersection 
-		distance = [shapely.geometry.point.Point(pt[0],pt[1]).distance(intersection) for pt in elem.centerline.points]
-		centerlinePts = [elem.centerline.points[i] for i in range(len(distance))]
+	if isinstance(elem, roads.NetworkElement):
 		if len(centerlinePts) == 0:
-			centerlinePts = [centerlinePts[centerlinePts.index(min(distance))]]
+			# find the two points closest to the intersection 
+			distance = [shapely.geometry.point.Point(pt[0],pt[1]).distance(intersection) for pt in elem.centerline.points]
+			centerlinePts = [elem.centerline.points[i] for i in range(len(distance))]
+			if len(centerlinePts) == 0:
+				centerlinePts = [centerlinePts[centerlinePts.index(min(distance))]]
 
-	if len(centerlinePts) == 1:
-		if centerlinePts[0] == elem.centerline.points[0]:
-			centerlinePts.append(elem.centerline.points[1])
-			return centerlinePts
-		else:
-			index = elem.centerline.points.index(centerlinePts[0])
-			return elem.centerline.points[index-1:index+2]
-	
+		if len(centerlinePts) == 1:
+			if centerlinePts[0] == elem.centerline.points[0]:
+				centerlinePts.append(elem.centerline.points[1])
+				return centerlinePts
+			else:
+				index = elem.centerline.points.index(centerlinePts[0])
+				return elem.centerline.points[index-1:index+2]
+
+	elif isinstance(elem, shapely.geometry.LineString):
+		if len(centerlinePts) < 2:
+			return None
+		
+	else:
+		raise NotImplementedError
+
 	prev_heading = None # (key, value) = (point, slope with the next point), last point's slope is None
 	for i in range(len(centerlinePts)-1):
 		x1, y1 = centerlinePts[i]
@@ -294,6 +302,48 @@ def refineCenterlinePts(centerlinePts, elem, intersection):
 	assert(len(refinedCenterlinePts)>=2)
 	return refinedCenterlinePts
 
+def encodePolyLineHeading(cached_variables, elems, smt_file_path, point, heading_var, debug = False):
+	import scenic.core.vectors as vectors
+
+	for elem in elems:
+		centerlinePts = list(elem.coords)
+		intersection = elem.intersection(cached_variables['regionAroundEgo_polygon'])
+
+		if debug:
+			print("len(elem.coords): ", len(elem.coords))
+			print("len(centerlinePts): ", len(centerlinePts))
+
+		centerlinePts = refineCenterlinePts(centerlinePts, elem, intersection)
+		if centerlinePts is None or centerlinePts == []:
+			if debug:
+				print("centerlinePts is None")
+			continue
+
+		if debug:
+			print("refined len(centerlinePts): ",len(centerlinePts))
+		
+		for i in range(len(centerlinePts)-1):
+			start = centerlinePts[i]
+			end = centerlinePts[i+1]
+			x1, y1 = start[0], start[1]
+			x2, y2 = end[0], end[1]
+
+			startVector = vectors.Vector(start[0], start[1])
+			endVector = vectors.Vector(end[0], end[1])
+			heading = startVector.angleTo(endVector)
+
+			slope = float(y2-y1) / float(x2-x1)
+			offset = y1 - slope * x1 # b = y - a*x
+			line_encoding = smt_equal(point[1], smt_add(smt_multiply(str(slope), point[0]), str(offset))) # ax + b
+
+			if i == 0:
+				smt_encoding = smt_ite(line_encoding, str(heading), '-1000')
+			else:
+				smt_encoding = smt_ite(line_encoding, str(heading), smt_encoding)
+
+	writeSMTtoFile(smt_file_path, smt_assert("equal", heading_var, smt_encoding))
+	writeSMTtoFile(smt_file_path, smt_assert("not", smt_equal(heading_var, '-1000')))
+	return heading_var
 
 # find line perpendicular to the centerline segment & pass through the centerline point
 def encodeHeading(cached_variables, elems, smt_file_path, smt_var, heading_var, debug=False):
@@ -301,6 +351,7 @@ def encodeHeading(cached_variables, elems, smt_file_path, smt_var, heading_var, 
 	import scenic.core.geometry as geometry
 	import scenic.core.vectors as vectors
 	import scenic.core.regions as regions
+	import scenic.domains.driving.roads as roads
 
 	smt_encoding = None
 	regionAroundEgo = cached_variables['regionAroundEgo']
@@ -320,11 +371,13 @@ def encodeHeading(cached_variables, elems, smt_file_path, smt_var, heading_var, 
 		print("elems: ", elems)
 
 	for elem in elems:
+		centerlinePts, intersection = None, None
 		if len(elem.centerline.points) > 2:
 			centerlinePts = [pt for pt in elem.centerline.points if regionAroundEgo.containsPoint(vectors.Vector(pt[0],pt[1]))]
 		else:
 			centerlinePts = elem.centerline.points
 
+		intersection = elem.polygon.intersection(cached_variables['regionAroundEgo_polygon'])
 		if debug:
 			print("len(elem.centerline.points): ", len(elem.centerline.points))
 			print("len(centerlinePts): ", len(centerlinePts))
@@ -337,9 +390,9 @@ def encodeHeading(cached_variables, elems, smt_file_path, smt_var, heading_var, 
 		# 		centerlinePts.append(elem.centerline.points[index-1])
 		# # assert(len(centerlinePts) >= 2)
 
-		intersection = elem.polygon.intersection(cached_variables['regionAroundEgo_polygon'])
+		# intersection = elem.polygon.intersection(cached_variables['regionAroundEgo_polygon'])
 		centerlinePts = refineCenterlinePts(centerlinePts, elem, intersection)
-		if centerlinePts is None:
+		if centerlinePts is None or centerlinePts == []:
 			if debug:
 				print("centerlinePts is None")
 			continue
@@ -1266,25 +1319,19 @@ class MethodDistribution(Distribution):
 			output = findVariableName(smt_file_path, cached_variables, 'methodDist', debug=debug)
 
 			import scenic.domains.driving.roads as roads
-			assert(optionsRegion.checkOptionsType(roads.NetworkElement))
+			import shapely.geometry
 			heading_var = output
-			encodeHeading(cached_variables, optionsRegion.options, smt_file_path, smt_var, heading_var, debug=debug)
+			if optionsRegion.checkOptionsType(roads.NetworkElement):
+				encodeHeading(cached_variables, optionsRegion.options, smt_file_path, smt_var, heading_var, debug=debug)
+			elif optionsRegion.checkOptionsType(shapely.geometry.LineString):
+				encodePolyLineHeading(cached_variables, optionsRegion.options, smt_file_path, smt_var, heading_var, debug=debug)
+			else:
+				raise NotImplementedError
 
 		else:
 			raise NotImplementedError
 
 		return cacheVarName(cached_variables, self, output)
-
-	# def conditionforSMT(self, condition, conditioned_bool):
-	# 	if isinstance(self.object, Samplable) and not isConditioned(self.object):
-	# 		self.object.conditionforSMT(condition, conditioned_bool)
-	# 	for arg in self.arguments:
-	# 		if isinstance(arg, Samplable) and not isConditioned(arg):
-	# 			arg.conditionforSMT(condition, conditioned_bool)
-	# 	for kwarg in self.kwargs:
-	# 		if isinstance(kwarg, Samplable) and not isConditioned(kwarg):
-	# 			kwarg.conditionforSMT(condition, conditioned_bool)
-	# 	return None
 
 	def sampleGiven(self, value):
 		args = []
@@ -1676,7 +1723,7 @@ class OperatorDistribution(Distribution):
 								heading_smt = str(heading)
 							else:
 								raise NotImplementedError
-							writeSMTtoFile(smt_file_path, smt_assert("equal", heading, output))
+							writeSMTtoFile(smt_file_path, smt_assert("equal", heading_smt, output))
 							return cacheVarName(cached_variables, self, output)
 					return None
 

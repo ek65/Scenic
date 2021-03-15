@@ -339,13 +339,6 @@ class Vector(Samplable, collections.abc.Sequence):
 	def y(self) -> float:
 		return self.coordinates[1]
 
-	def conditionforSMT(self, condition, conditioned_bool):
-		if isinstance(self.x, Samplable) and not isConditioned(self.x):
-			self.x.conditionforSMT(condition, conditioned_bool)
-		if isinstance(self.y, Samplable) and not isConditioned(self.y):
-			self.y.conditionforSMT(condition, conditioned_bool)
-		return None
-
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		if debug:
 			print( "Vector Class")

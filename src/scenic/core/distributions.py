@@ -212,6 +212,7 @@ def checkAndEncodeSMT(smt_file_path, cached_variables, obj, debug=False):
 	return None
 
 def writeSMTtoFile(smt_file_path, smt_encoding):
+	# print("writeSMTtoFile(): ", smt_encoding)
 	if isinstance(smt_encoding, str):
 		with open(smt_file_path, "a+") as smt_file:
 			smt_file.write(smt_encoding+"\n")
@@ -1203,7 +1204,7 @@ class MethodDistribution(Distribution):
 		self.arguments = args
 		self.kwargs = kwargs
 
-	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, debug=False, encode=True):
 		"""to avoid duplicate variable names, check for variable existence in cached_variables dict:
 		   cached_variables : key = obj, value = variable_name / key = 'variables', value = list(cached variables so far)
 		   encodeToSMT() must return 'cached_variables' dictionary
@@ -1226,13 +1227,16 @@ class MethodDistribution(Distribution):
 
 		import scenic.domains.driving.roads as roads
 		import scenic.core.vectors as vectors
+		import scenic.core.type_support as type_support
 		obj = None
 		if isinstance(self.object, Samplable) and isConditioned(self.object):
 			obj = self.object._conditioned
-		elif isinstance(self.object, Options):
-			obj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
+		# elif isinstance(self.object, Options):
+		# 	obj = self.object.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=False)
+		elif isinstance(self.object, type_support.TypecheckedDistribution):
+			obj = self.object.dist
 		else:
-			obj = self.object
+			obj = self.object            
 		
 		output = None
 		if self.method == roads.Network.findPointIn:
@@ -1264,7 +1268,17 @@ class MethodDistribution(Distribution):
 		elif self.method == roads.Network.laneGroupAt:
 			assert(len(self.arguments)==1)
 			point = self.arguments[0]
-			output = obj.laneGroupAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
+			if not encode and isConditioned(self.arguments[0]) and isinstance(self.arguments[0]._conditioned, vectors.Vector):
+				import scenic.domains.driving.roads as roads
+				if isinstance(self.object, roads.Network):
+					lanegroup = self.object.laneGroupAt(self.arguments[0]._conditioned)
+					if debug:
+						print("MethodDistribution method: laneGroupAt")
+						plt.plot(*lanegroup.polygon.exterior.xy, color='r')
+						plt.show()
+					return lanegroup
+			else:
+				outputt = obj.laneGroupAtEncodeSMT(smt_file_path, cached_variables, point, debug=debug)
 
 		elif self.method == roads.Network.crossingAt:
 			assert(len(self.arguments)==1)
@@ -1391,11 +1405,12 @@ class AttributeDistribution(Distribution):
 		if debug:
 			print( "Class AttributeDistribution encodeToSMT")
 			print("self: ", self)
+			print("encode: ", encode)
 
-		if isConditioned(self) and not isinstance(self._conditioned, Samplable):
+		if encode and isConditioned(self) and not isinstance(self._conditioned, Samplable):
 			return cacheVarName(cached_variables, self, self._conditioned)
 		
-		if self in cached_variables.keys():
+		if encode and self in cached_variables.keys():
 			print( "Class AttributeDistribution self in cached_variables")
 
 		from scenic.core.object_types import Point
@@ -1429,8 +1444,12 @@ class AttributeDistribution(Distribution):
 
 		else:
 			if isinstance(obj, Options):
+				if debug:
+					print("AttributeDistribution encode=False, type(obj) is Options")
 				if obj.checkOptionsType(roads.NetworkElement):
 					networkObjs = obj.encodeToSMT(smt_file_path, cached_variables, debug=debug, encode=encode)
+					if debug:
+						print("networkObjs: ", networkObjs)
 
 					if obj in cached_variables.keys():
 						output_smt = cached_variables[obj]
@@ -1487,6 +1506,38 @@ class AttributeDistribution(Distribution):
 					print("NEW CASE: AttributeDistribution self.attribute: ", self.attribute)
 					raise NotImplementedError
 
+			elif isinstance(obj, AttributeDistribution):
+				if self.attribute == 'intersect':
+					possibleRegions = obj.encodeToSMT(smt_file_path, cached_variables, debug, encode=False)
+					assert(isinstance(possibleRegions, Options))
+					return possibleRegions
+				elif self.attribute == '_opposite':
+					possibleRegions = obj.encodeToSMT(smt_file_path, cached_variables, debug, encode=False)
+					if isinstance(possibleRegions, Options):
+						pass
+					else:
+						outputRegion = possibleRegions._opposite
+						if debug:
+							print("AttributeDistribution attribute: _opposite")
+							plt.plot(*outputRegion.exterior.xy, color='r')
+							plt.show()
+						return outputRegion
+				elif self.attribute == 'lanes':
+					possibleRegions = obj.encodeToSMT(smt_file_path, cached_variables, debug, encode=False)
+					if isinstance(possibleRegions, Options):
+						pass
+					else:
+						outputRegions = possibleRegions.lanes
+						if debug:
+							print("AttributeDistribution attribute: lanes")
+							for lane in outputRegions:
+								plt.plot(*lane.polygon.exterior.xy, color='g')
+								plt.show()
+						return outputRegions
+				else:
+					print("NEW CASE: AttributeDistribution type(self.object): ", type(obj))
+					print("NEW CASE: AttributeDistribution self.object: ", obj)
+					print("NEW CASE: AttributeDistribution self.attribute: ", self.attribute)
 			else:
 				print("NEW CASE: AttributeDistribution type(self.object): ", type(obj))
 				print("NEW CASE: AttributeDistribution self.object: ", obj)
@@ -2386,6 +2437,8 @@ class Options(MultiplexerDistribution):
 				regionAroundEgo = cached_variables['regionAroundEgo_polygon']
 				import scenic.core.vectors as vectors
 				if not isinstance(self._conditioned, vectors.Vector):
+					if debug:
+						print("Options class encode=False, not conditioned on Vector")
 					for reg in self.options:
 						intersection = regionAroundEgo.intersection(reg.polygon)
 						if not (intersection.is_empty):
@@ -2405,6 +2458,8 @@ class Options(MultiplexerDistribution):
 					# plt.show()
 
 				else:
+					if debug:
+						print("Options class encode=False, it IS conditioned on Vector")
 					vector = self._conditioned
 					for reg in self.options:
 						if reg.containsPoint(vector):
@@ -2412,6 +2467,9 @@ class Options(MultiplexerDistribution):
 
 				if len(valid_options) == 0:
 					return None
+
+				if debug:
+					print("valid_options: ", valid_options)
 
 				return Options(valid_options)
 

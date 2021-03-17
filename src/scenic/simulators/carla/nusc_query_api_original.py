@@ -2,7 +2,6 @@ from nuscenes import NuScenes
 from nuscenes.map_expansion.map_api import NuScenesMap
 from nuscenes.scripts.export_2d_annotations_as_json import post_process_coords
 from nuscenes.utils.geometry_utils import view_points
-from nuscenes.map_expansion import arcline_path_utils
 
 from pyquaternion.quaternion import Quaternion
 import numpy as np
@@ -250,15 +249,35 @@ class NuscQueryAPI:
 
 		# Also return helper function that retrieves traffic flow at any point
 		def get_traffic_flow(point):
-			closest_lane_token = map_api.get_closest_lane(point[0], point[1])
-			arcline = map_api.get_arcline_path(closest_lane_token)
+			lane_token = map_api.record_on_point(point[0], point[1], 'lane')
 
-			# Set heading to dummy zero value (not needed for function below)
-			ego_pose = [point[0], point[1], 0]
+			if lane_token == '':
+				# Find closest lane if point does not lie on any lane
+				closest_lane_token = map_api.get_closest_lane(point[0], point[1])
 
-			traffic_pose, _ = arcline_path_utils.project_pose_to_lane(ego_pose, arcline)
+				if closest_lane_token == '':
+					return 'Found no lanes near point'
 
-			return traffic_pose[2]
+				lane_token = closest_lane_token
+
+			lane_rec = map_api.get('lane', lane_token)
+
+			from_edge = map_api.get('line', lane_rec['from_edge_line_token'])
+			to_edge = map_api.get('line', lane_rec['to_edge_line_token'])
+
+			from_nodes = [map_api.get('node', t) for t in from_edge['node_tokens']]
+			from_nodes = [np.array([n['x'], n['y']]) for n in from_nodes]
+			to_nodes = [map_api.get('node', t) for t in to_edge['node_tokens']]
+			to_nodes = [np.array([n['x'], n['y']]) for n in to_nodes]
+
+			# Compute traffic flow vector using midpoints of edges
+			from_mid = (from_nodes[0] + from_nodes[1]) / 2
+			to_mid = (to_nodes[0] + to_nodes[1]) / 2
+			traffic_flow_vec = to_mid - from_mid
+
+			heading = np.arctan2(traffic_flow_vec[1], traffic_flow_vec[0])
+
+			return heading + np.pi / 2
 
 		retval['traffic_flow'] = get_traffic_flow
 

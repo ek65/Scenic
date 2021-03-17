@@ -19,6 +19,7 @@ from scenic.core.distributions import (Samplable, Distribution, MethodDistributi
 from scenic.core.lazy_eval import valueInContext, needsLazyEvaluation, makeDelayedFunctionCall
 import scenic.core.utils as utils
 from scenic.core.geometry import normalizeAngle
+from scenic.core.utils import areEquivalent
 
 class VectorDistribution(Distribution):
 	"""A distribution over Vectors."""
@@ -221,6 +222,13 @@ class VectorOperatorDistribution(VectorDistribution):
 		operands = tuple(valueInContext(arg, context) for arg in self.operands)
 		return VectorOperatorDistribution(self.operator, obj, operands)
 
+	def isEquivalentTo(self, other):
+		if not type(other) is VectorOperatorDistribution:
+			return False
+		return (areEquivalent(self.object, other.object)
+			and areEquivalent(self.operator, other.operator)
+			and areEquivalent(self.operands, other.operands))
+
 	def __str__(self):
 		ops = utils.argsToString(self.operands)
 		return f'{self.object}.{self.operator}{ops}'
@@ -244,6 +252,13 @@ class VectorMethodDistribution(VectorDistribution):
 			if isinstance(kwarg, Samplable) and not isConditioned(kwarg):
 				kwarg.conditionforSMT(condition, conditioned_bool)
 		return None
+
+	def isEquivalentTo(self, other):
+		if not type(other) is VectorMethodDistribution:
+			return False
+		return (areEquivalent(self.object, other.object)
+			and areEquivalent(self.method, other.method)
+			and areEquivalent(self.kwargs, other.kwargs))
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		if debug:
@@ -853,6 +868,25 @@ class VectorField:
 		for i in range(steps):
 			pos = pos.offsetRadially(step, self[pos])
 		return pos
+
+	def followFrom_encodeToSMT(self, smt_file_path, cached_variables, pos_obj, dist, debug=False, encode=True):
+		assert(isConditioned(pos) and isinstance(pos._conditioned, Vector))
+		x, y = pos_obj._conditioned
+		pos = Vector(float(x), float(y))
+		network = cached_variables['network']
+
+		if steps is None:
+			steps = self.minSteps
+			stepSize = self.defaultStepSize if stepSize is None else stepSize
+			if stepSize is not None:
+				steps = max(steps, math.ceil(dist / stepSize))
+
+		step = dist / steps
+		for i in range(steps):
+			pos = pos.offsetRadially(step, network.nominalDirectionAt(pos))
+
+		return (str(pos.x), str(pos.y))
+
 
 	@staticmethod
 	def forUnionOf(regions):

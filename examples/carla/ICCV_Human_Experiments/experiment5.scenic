@@ -11,5 +11,5 @@ egoLane = Uniform(*lanesWithRightLane)
 
 ego = Car on egoLane, 
 		facing Range(-15,15) deg relative to roadDirection
-cutInCar = Car on egoLane._laneToRight,
+cutInCar = Car offset by Range(0, 4) @ Range(0, 5),
 			facing -1* Range(15, 30) deg relative to roadDirection

@@ -25,6 +25,7 @@ from scenic.core.utils import cached, cached_property, areEquivalent
 import matplotlib.pyplot as plt
 from scenic.core.type_support import TypecheckedDistribution
 from scenic.core.errors import RuntimeParseError
+from scenic.core.utils import areEquivalent
 
 
 def VectorToTuple(vector):
@@ -248,7 +249,7 @@ class PointInRegionDistribution(VectorDistribution):
 				print( "PointInRegionDistribution already cached")
 			return cached_variables[self]
 
-		if isinstance(self._conditioned, Vector):
+		if encode and isinstance(self._conditioned, Vector):
 			if debug:
 				print( "PointInRegionDistribution is conditioned : " + str(self._conditioned))
 			vector = self._conditioned
@@ -256,8 +257,11 @@ class PointInRegionDistribution(VectorDistribution):
 			return cacheVarName(cached_variables, self, smt_var)
 
 		if smt_var is None:
-			x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
-			y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
+			if not encode and self in cached_variables.keys():
+				x, y = cached_variables[self]
+			else:
+				x = findVariableName(smt_file_path, cached_variables, 'x', debug=debug)
+				y = findVariableName(smt_file_path, cached_variables, 'y', debug=debug)
 			smt_var = (x,y)
 
 		if isinstance(self.region, TypecheckedDistribution):
@@ -296,7 +300,7 @@ class PointInRegionDistribution(VectorDistribution):
 
 		elif isinstance(region, Region):
 			if debug:
-				print("PointInRegionDistribution Region Case")
+				print("PointInRegionDistribution Region Case region: ",type(region))
 			output = region.encodeToSMT(smt_file_path, cached_variables, smt_var, debug=debug, encode=encode)
 			if not encode:
 				return output
@@ -315,6 +319,11 @@ class PointInRegionDistribution(VectorDistribution):
 
 	def sampleGiven(self, value):
 		return value[self.region].uniformPointInner()
+
+	def isEquivalentTo(self, other):
+		if not type(other) is PointInRegionDistribution:
+			return False
+		return (areEquivalent(self.region, other.region))
 
 	@property
 	def heading(self):
@@ -590,6 +599,16 @@ class SectorRegion(Region):
 		self.circumcircle = (self.center.offsetRadially(r, heading), r)
 		self.resolution = resolution
 
+	def isEquivalentTo(self, other):
+		if not type(other) is SectorRegion:
+			return False
+		return (areEquivalent(self.center, other.center)
+			and areEquivalent(self.radius, other.radius)
+			and areEquivalent(self.heading, other.heading)
+			and areEquivalent(self.angle, other.angle)
+			and areEquivalent(self.circumcircle, other.circumcircle)
+			and areEquivalent(self.resolution, other.resolution))
+
 	def conditionforSMT(self, condition, conditioned_bool):
 		if isinstance(self.center, Samplable) and not isConditioned(self.center):
 			self.center.conditionforSMT(condition, conditioned_bool)
@@ -602,7 +621,8 @@ class SectorRegion(Region):
 
 		return None
 
-	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False):
+	def encodeToSMT(self, smt_file_path, cached_variables, smt_var=None, debug=False, encode=True):
+		assert(encode is True)
 		if debug:
 			print( "SectorRegion")
 			print( "center: "+str(self.center))
@@ -649,7 +669,11 @@ class SectorRegion(Region):
 
 		# Encode and write to file, a contraint for a circle
 		if debug: 
-			print( "encode circle of ego_visibleRegion")
+			print("SectorRegion center: ", center)
+			print("SectorRegion radius: ", radius)
+			print("SectorRegion heading: ", heading)
+			print("SectorRegion angle: ", angle)
+			print( "SectorRegion encode circle of ego_visibleRegion")
 		shifted_output_x = smt_subtract(output_x, center_x)
 		shifted_output_y = smt_subtract(output_y, center_y)
 		square_center_x = smt_multiply(shifted_output_x, shifted_output_x)
@@ -660,12 +684,17 @@ class SectorRegion(Region):
 		writeSMTtoFile(smt_file_path, smt_assert(None, circle_smt))
 
 		# get the left position of the sector with respect to the center position
+		if debug:
+			print("SectorRegion() get the left position of the sector with respect to the center position")
+
 		obj1 = VectorOperatorDistribution('offsetRadially', self.center, \
 			[self.radius, self.heading - (self.angle) / 2])
 		obj1.encodeToSMT(smt_file_path, cached_variables, debug=debug)
 		(right_x, right_y) = cached_variables[obj1]
 
 		# get the right position of the sector with respect to the center position
+		if debug:
+			print("SectorRegion() get the right position of the sector with respect to the center position")
 		obj2 = VectorOperatorDistribution('offsetRadially', self.center, \
 			[self.radius, self.heading + (self.angle) / 2])
 		obj2.encodeToSMT(smt_file_path, cached_variables, debug=debug)
@@ -883,6 +912,12 @@ class PolylineRegion(Region):
 				pts.append(p)
 			pts.append(q)
 			self.points = pts
+
+	def isEquivalentTo(self, other):
+		if not type(other) is PolylineRegion:
+			return False
+		return (areEquivalent(self.points, other.points)
+			and areEquivalent(self.lineString, other.lineString))
 
 	def conditionforSMT(self, condition, conditioned_bool):
 		raise NotImplementedError
@@ -1127,6 +1162,13 @@ class PolygonalRegion(Region):
 		self.trianglesAndBounds = tuple((tri, tri.bounds) for tri in triangles)
 		areas = (triangle.area for triangle in triangles)
 		self.cumulativeTriangleAreas = tuple(itertools.accumulate(areas))
+
+	def isEquivalentTo(self, other):
+		if not type(other) is PolygonalRegion:
+			return False
+		return (areEquivalent(self.points, other.points)
+			and areEquivalent(self.polygons, other.polygons))
+
 
 	def conditionforSMT(self, condition, conditioned_bool):
 		raise NotImplementedError
@@ -1541,8 +1583,19 @@ class IntersectionRegion(Region):
 	def isEquivalentTo(self, other):
 		if type(other) is not IntersectionRegion:
 			return False
-		return (areEquivalent(set(other.regions), set(self.regions))
-		        and other.orientation == self.orientation)
+		if len(other.regions)!=len(self.regions):
+			return False
+
+		for i in range(len(self.regions)):
+			if not areEquivalent(self.regions[i], other.regions[i]):
+				return False
+		if self.orientation != self.orientation:
+			return False
+
+		return True
+
+		# return (areEquivalent(set(other.regions), set(self.regions))
+		#         and other.orientation == self.orientation)
 
 	def __repr__(self):
 		return f'IntersectionRegion({self.regions})'

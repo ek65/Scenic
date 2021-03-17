@@ -40,6 +40,7 @@ from scenic.simulators.utils.colors import Color
 
 import pickle
 from nuscenes.map_expansion.map_api import NuScenesMap
+from nuscenes.map_expansion import arcline_path_utils
 from scenic.core.vectors import VectorField
 import numpy as np
 
@@ -53,6 +54,8 @@ if 'map' in globalParameters:
     param map_options = {}
     #: The road network being used for the scenario, as a `Network` object.
     network : Network = Network.fromFile(globalParameters.map, **globalParameters.map_options)
+    print("globalParameters.map: ", globalParameters.map)
+    print("globalParameters.map_options: ", globalParameters.map_options)
     workspace = DrivingWorkspace(network)
 
 if 'map_options' not in globalParameters:
@@ -63,30 +66,13 @@ if 'map_options' not in globalParameters:
     from scenic.core.geometry import normalizeAngle
 
     def get_traffic_flow(point):
-        lane_token = map_api.record_on_point(point.x, point.y, 'lane')
+        closest_lane_token = map_api.get_closest_lane(point[0], point[1])
+        arcline = map_api.get_arcline_path(closest_lane_token)
 
-        if lane_token == '':
-            return 0
-
-        lane_rec = map_api.get('lane', lane_token)
-
-        from_edge = map_api.get('line', lane_rec['from_edge_line_token'])
-        to_edge = map_api.get('line', lane_rec['to_edge_line_token'])
-
-        from_nodes = [map_api.get('node', t) for t in from_edge['node_tokens']]
-        from_nodes = [np.array([n['x'], n['y']]) for n in from_nodes]
-        to_nodes = [map_api.get('node', t) for t in to_edge['node_tokens']]
-        to_nodes = [np.array([n['x'], n['y']]) for n in to_nodes]
-
-        # Compute traffic flow vector using midpoints of edges
-        from_mid = (from_nodes[0] + from_nodes[1]) / 2
-        to_mid = (to_nodes[0] + to_nodes[1]) / 2
-        traffic_flow_vec = to_mid - from_mid
-
-        heading = np.arctan2(traffic_flow_vec[1], traffic_flow_vec[0])
-        output = normalizeAngle(heading - math.pi/2)
-
-        return output
+        # Set heading to dummy zero value (not needed for function below)
+        ego_pose = [point[0], point[1], 0]
+        traffic_pose, _ = arcline_path_utils.project_pose_to_lane(ego_pose, arcline)
+        return normalizeAngle(traffic_pose[2] - math.pi/2)
 
     network.roadDirection = VectorField('roadDirection', get_traffic_flow)
 
@@ -130,6 +116,7 @@ intersection : Region = Uniform(*network.intersections)
 intersectionRegion : Region = network.intersectionRegion
 
 roadDirection : VectorField = network.roadDirection
+roadsOrIntersections : NetworkElement = Uniform(*network.intersections, *network.lanes)
 
 ## Standard object types
 
@@ -302,7 +289,7 @@ class Vehicle(DrivingObject):
     """
     regionContainedIn: roadOrShoulder
     position: Point on road
-    heading: (roadDirection at self.position) + self.roadDeviation
+    heading: roadDirection at self.position
     roadDeviation: 0
     viewAngle: 90 deg
     width: 2

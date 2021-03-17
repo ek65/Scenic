@@ -11,6 +11,7 @@ from scenic.core.lazy_eval import (DelayedArgument, valueInContext, requiredProp
                                    needsLazyEvaluation, toDelayedArgument)
 from scenic.core.vectors import Vector
 from scenic.core.errors import RuntimeParseError, saveErrorLocation
+from scenic.core.utils import areEquivalent
 
 # Typing and coercion rules:
 #
@@ -172,6 +173,11 @@ class TypecheckedDistribution(Distribution):
 		self.errorMessage = errorMessage
 		self.coercer = coercer
 		self.loc = saveErrorLocation()
+
+	def isEquivalentTo(self, other):
+		if not type(other) is TypecheckedDistribution:
+			return False
+		return (areEquivalent(self.dist, other.dist))
 
 	def encodeToSMT(self, smt_file_path, cached_variables, debug=False):
 		if debug:
